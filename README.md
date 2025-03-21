@@ -22,3 +22,15 @@ please contact Hongqiu (hongqiuwang16@gmail.com) for the dataset. One step is ne
 **The data provided cannot be forwarded to others, and only individuals with approved applications are authorized to use them.**
 
 **Thanks for understanding and cooperation!**
+
+# Citation 📖
+
+If you find our work useful or relevant to your research, please consider citing:
+```
+@article{wang2024serp,
+  title={Serp-Mamba: Advancing High-Resolution Retinal Vessel Segmentation with Selective State-Space Model},
+  author={Wang, Hongqiu and Chen, Yixian and Chen, Wu and Xu, Huihui and Zhao, Haoyu and Sheng, Bin and Fu, Huazhu and Yang, Guang and Zhu, Lei},
+  journal={arXiv preprint arXiv:2409.04356},
+  year={2024}
+}
+```
