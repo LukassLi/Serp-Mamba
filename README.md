@@ -1,8 +1,25 @@
 # Serp-Mamba
 Serp-Mamba: Advancing High-Resolution Retinal Vessel Segmentation with Selective State-Space Model
 
-Code will be available soon！
+# How to Run the Code 🛠
+## Environment Installation
+Requirements: Ubuntu 20.04, CUDA 12.2
 
+	1. Create a virtual environment: conda create -n Serp-mamba python=3.10 -y and conda activate Serp-mamba, cd SerpMamba
+ 
+	2. Pytorch : pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+ 
+	3. Install mamba_ssm and causal-conv1d: download causal_conv1d-1.1.3.post1+cu122torch2.1cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+	and mamba_ssm-1.1.1+cu122torch2.1cxx11abiFALSE-cp310-cp310-linux_x86_64.whl. Then insert pip install causal_conv1d-1.1.3.post1+cu122torch2.1cxx11abiFALSE-cp310-cp310-linux_x86	_64.whl and pip install mamba_ssm-1.1.1+cu122torch2.1cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+ 
+	4. pip install -r requirements.txt
+
+ ### 1. Train Serp-Mamba
+	python train.py
+
+ ### 2. Test Serp-Mamba
+	python test.py
+	
 
 # Dataset 📊
 Multi-center UWF-SLO Vessel Segmentation (MU-VS) dataset 
@@ -34,3 +51,4 @@ If you find our work useful or relevant to your research, please consider citing
   year={2024}
 }
 ```
+We thank the authors of nnU-Net, Mamba, U-mamba, and DSCNet for making their valuable code publicly available.
