@@ -51,4 +51,4 @@ If you find our work useful or relevant to your research, please consider citing
   year={2024}
 }
 ```
-We thank the authors of nnU-Net, Mamba, U-mamba, and DSCNet for making their valuable code publicly available.
+We thank the authors of nnU-Net, Mamba, U-mamba, and DSCNet for making their valuable code.
