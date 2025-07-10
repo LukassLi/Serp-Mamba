@@ -1,0 +1,123 @@
+from .unet_denoise_v3_uncer import PlainConvUNet
+
+import torch.nn as nn 
+
+unet_config = {"UNet_base_num_features": 32,
+                "n_conv_per_stage_encoder": [
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2
+                ],
+                "n_conv_per_stage_decoder": [
+                    2,
+                    2,
+                    2,
+                    2,
+                    2
+                ],
+                "num_pool_per_axis": [
+                    5,
+                    5,
+                    5
+                ],
+                "pool_op_kernel_sizes": [
+                    [
+                        1,
+                        1,
+                        1
+                    ],
+                    [
+                        2,
+                        2,
+                        2
+                    ],
+                    [
+                        2,
+                        2,
+                        2
+                    ],
+                    [
+                        2,
+                        2,
+                        2
+                    ],
+                    [
+                        2,
+                        2,
+                        2
+                    ],
+                    [
+                        2,
+                        2,
+                        2
+                    ]
+                ],
+                "conv_kernel_sizes": [
+                    [
+                        3,
+                        3,
+                        3
+                    ],
+                    [
+                        3,
+                        3,
+                        3
+                    ],
+                    [
+                        3,
+                        3,
+                        3
+                    ],
+                    [
+                        3,
+                        3,
+                        3
+                    ],
+                    [
+                        3,
+                        3,
+                        3
+                    ],
+                    [
+                        3,
+                        3,
+                        3
+                    ]
+                ],
+                "unet_max_num_features": 320,
+}
+num_stages = len(unet_config["conv_kernel_sizes"])
+
+conv_or_blocks_per_stage = {
+    'n_conv_per_stage': unet_config["n_conv_per_stage_encoder"],
+    'n_conv_per_stage_decoder': unet_config['n_conv_per_stage_decoder']
+    }
+other_kwargs = {
+            'conv_bias': True,
+            'norm_op': nn.InstanceNorm3d,
+            'norm_op_kwargs': {'eps': 1e-5, 'affine': True},
+            'dropout_op': None, 'dropout_op_kwargs': None,
+            'nonlin': nn.LeakyReLU, 'nonlin_kwargs': {'inplace': True},
+        }
+conv_op = nn.Conv3d
+
+def get_nnunet3d(in_chans, out_chans, ddim_step=3, rand_step=1, bta=True):
+    model = PlainConvUNet(input_channels=in_chans, 
+                          n_stages=num_stages, 
+                          features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
+                                unet_config["unet_max_num_features"]) for i in range(num_stages)],
+                          conv_op=conv_op,
+                          kernel_sizes=unet_config["conv_kernel_sizes"],
+                          strides=unet_config["pool_op_kernel_sizes"],
+                          num_classes=out_chans,
+                          ddim_step=ddim_step,
+                          rand_step=rand_step,
+                          bta=bta,
+                          **conv_or_blocks_per_stage,
+                          **other_kwargs,
+                          )
+
+    return model
