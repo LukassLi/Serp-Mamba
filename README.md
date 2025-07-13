@@ -44,11 +44,12 @@ please contact Hongqiu (hongqiuwang16@gmail.com) for the dataset. One step is ne
 
 If you find our work useful or relevant to your research, please consider citing:
 ```
-@article{wang2024serp,
-  title={Serp-Mamba: Advancing High-Resolution Retinal Vessel Segmentation with Selective State-Space Model},
+@article{wang2025serp,
+  title={Serp-mamba: Advancing high-resolution retinal vessel segmentation with selective state-space model},
   author={Wang, Hongqiu and Chen, Yixian and Chen, Wu and Xu, Huihui and Zhao, Haoyu and Sheng, Bin and Fu, Huazhu and Yang, Guang and Zhu, Lei},
-  journal={arXiv preprint arXiv:2409.04356},
-  year={2024}
+  journal={IEEE Transactions on Medical Imaging},
+  year={2025},
+  publisher={IEEE}
 }
 ```
 We thank the authors of nnU-Net, Mamba, U-mamba, and DSCNet for open-sourcing their valuable code.
