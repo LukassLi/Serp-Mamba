@@ -1,6 +1,10 @@
 # Serp-Mamba
 Serp-Mamba: Advancing High-Resolution Retinal Vessel Segmentation with Selective State-Space Model
 
+You can access the paper [here](https://ieeexplore.ieee.org/abstract/document/11059897).
+
+<img width="1136" height="637" alt="serp-mamba" src="https://github.com/user-attachments/assets/039a5a64-8857-4f29-9700-0b8eb45f9165" />
+
 # How to Run the Code 🛠
 ## Environment Installation
 Requirements: Ubuntu 20.04, CUDA 12.2
