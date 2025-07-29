@@ -55,30 +55,50 @@ def binarize_feature_map_with_median_threshold(feature_map):
 
 
 def get_thresholded_points(feature_map, threshold1, threshold2):
+    B = feature_map.shape[0]
     feature_map = feature_map.mean(dim=1, keepdim=True)  # 将feature map的通道数降为1
-    feature_map = feature_map.squeeze(0).squeeze(0)  # 去掉batch、channel维度
+    
+    all_coords = []
+    all_coords1 = []
+    all_coords2 = []
+    
+    for b in range(B):
+        feature_map_b = feature_map[b, 0]  # 去掉batch、channel维度
+        
+        coords = torch.stack(((feature_map_b > threshold1) & (feature_map_b < threshold2)).nonzero(as_tuple=True))
+        coords1 = torch.stack((feature_map_b > threshold1).nonzero(as_tuple=True))
+        coords2 = torch.stack((feature_map_b < threshold2).nonzero(as_tuple=True))
 
-    coords = torch.stack(((feature_map > threshold1) & (feature_map < threshold2)).nonzero(as_tuple=True))
-    coords1 = torch.stack((feature_map > threshold1).nonzero(as_tuple=True))
-    coords2 = torch.stack((feature_map < threshold2).nonzero(as_tuple=True))
+        coords = coords.permute(1, 0).unsqueeze(0)
+        coords1 = coords1.permute(1, 0).unsqueeze(0)
+        coords2 = coords2.permute(1, 0).unsqueeze(0)
+        
+        all_coords.append(coords)
+        all_coords1.append(coords1)
+        all_coords2.append(coords2)
 
-    coords = coords.permute(1, 0).unsqueeze(0)
-    coords1 = coords1.permute(1, 0).unsqueeze(0)
-    coords2 = coords2.permute(1, 0).unsqueeze(0)
-
-    return coords1, coords2, coords
+    return all_coords1, all_coords2, all_coords
 
 def extract_features_with_thresholds(input, feature_map, threshold1, threshold2):
-
+    B = input.shape[0]
     # 获取三种像素坐标
-    coords1, coords2, coords = get_thresholded_points(feature_map, threshold1, threshold2)
+    coords1_list, coords2_list, coords_list = get_thresholded_points(feature_map, threshold1, threshold2)
 
-    # 根据像素坐标提取对应像素
-    output1 = point_sample(input, coords1)
-    output2 = point_sample(input, coords2)
-    output = point_sample(input, coords)
+    output1_list = []
+    output2_list = []
+    output_list = []
+    
+    for b in range(B):
+        # 根据像素坐标提取对应像素
+        output1 = point_sample(input[b:b+1], coords1_list[b])
+        output2 = point_sample(input[b:b+1], coords2_list[b])
+        output = point_sample(input[b:b+1], coords_list[b])
+        
+        output1_list.append(output1)
+        output2_list.append(output2)
+        output_list.append(output)
 
-    return output1, output2, output, coords1, coords2, coords
+    return output1_list, output2_list, output_list, coords1_list, coords2_list, coords_list
 
 def point_sample(input, point_coords):
 
@@ -108,8 +128,8 @@ class Pixel_Extractor(nn.Module):
     def __init__(self):
         super(Pixel_Extractor, self).__init__()
 
-
     def forward(self, feature_map, threshold1, threshold2):
+        B = feature_map.shape[0]
         # Ensure the feature map is on the GPU
         feature_map = feature_map.to('cuda')
         feature_map_min = feature_map.min(dim=-1, keepdim=True)[0].min(dim=-2, keepdim=True)[0]
@@ -118,10 +138,26 @@ class Pixel_Extractor(nn.Module):
         # Normalize feature_map
         feature_map_norm = (feature_map - feature_map_min) / (feature_map_max - feature_map_min)
 
-        feature_map1, feature_map2, feature_map3, coords1, coords2, coords = extract_features_with_thresholds(
+        feature_map1_list, feature_map2_list, feature_map3_list, coords1_list, coords2_list, coords_list = extract_features_with_thresholds(
             feature_map, feature_map_norm, threshold1, threshold2)
 
-        return feature_map1, feature_map2, feature_map3, coords1, coords2, coords
+        # 将列表转换为tensor，处理空tensor的情况
+        if all(fm.numel() > 0 for fm in feature_map1_list):
+            feature_map1 = torch.cat(feature_map1_list, dim=0)
+        else:
+            feature_map1 = torch.empty(B, feature_map.shape[1], 0, device=feature_map.device)
+            
+        if all(fm.numel() > 0 for fm in feature_map2_list):
+            feature_map2 = torch.cat(feature_map2_list, dim=0)
+        else:
+            feature_map2 = torch.empty(B, feature_map.shape[1], 0, device=feature_map.device)
+            
+        if all(fm.numel() > 0 for fm in feature_map3_list):
+            feature_map3 = torch.cat(feature_map3_list, dim=0)
+        else:
+            feature_map3 = torch.empty(B, feature_map.shape[1], 0, device=feature_map.device)
+
+        return feature_map1, feature_map2, feature_map3, coords1_list, coords2_list, coords_list
 
 
 class EncoderConv(nn.Module):
@@ -146,26 +182,28 @@ class Continuity_Perception(nn.Module):
         self.output_channels = output_channels
 
     def forward(self, x_out, threshold1, threshold2):
+        B, C, H, W = x_out.shape
         # 分别归一化每一条通道
         x_min = x_out.min(dim=-1, keepdim=True)[0].min(dim=-2, keepdim=True)[0]
         x_max = x_out.max(dim=-1, keepdim=True)[0].max(dim=-2, keepdim=True)[0]
         x_normalized = (x_out - x_min) / (x_max - x_min)
 
-        _, C, H, W = x_out.shape
         denorm_value = x_min
-        for channel in range(C):
-            # 对于每条通道的各个区域进行检测
-            patches = F.unfold(x_normalized[:, channel:channel + 1], kernel_size=3, padding=1)
-            patches = patches.permute(0, 2, 1).view(-1, H, W, 9)
+        
+        for b in range(B):  # 遍历每个batch
+            for channel in range(C):
+                # 对于每条通道的各个区域进行检测
+                patches = F.unfold(x_normalized[b:b+1, channel:channel + 1], kernel_size=3, padding=1)
+                patches = patches.permute(0, 2, 1).view(-1, H, W, 9)
 
-            # 统计周围像素的类别
-            center_pixel_condition = (patches[..., 4] > threshold1) & (patches[..., 4] < threshold2)
-            surrounding_condition = patches[..., [0, 1, 2, 3, 5, 6, 7, 8]] < threshold1
-            surrounding_condition = surrounding_condition.all(dim=-1)
-            condition = (center_pixel_condition & surrounding_condition).unsqueeze(1)
+                # 统计周围像素的类别
+                center_pixel_condition = (patches[..., 4] > threshold1) & (patches[..., 4] < threshold2)
+                surrounding_condition = patches[..., [0, 1, 2, 3, 5, 6, 7, 8]] < threshold1
+                surrounding_condition = surrounding_condition.all(dim=-1)
+                condition = (center_pixel_condition & surrounding_condition).unsqueeze(1)
 
-            denorm_value_channel = denorm_value[:, channel:channel + 1, :, :]
-            x_out[:, channel:channel+1][condition] = denorm_value_channel
+                denorm_value_channel = denorm_value[b:b+1, channel:channel + 1, :, :]
+                x_out[b:b+1, channel:channel+1][condition] = denorm_value_channel
 
         return x_out
 
@@ -177,6 +215,8 @@ class UncertaintyCheck(nn.Module):
         self.conv_expand = nn.ConvTranspose2d(1, output_channels, kernel_size=1).to('cuda')
 
     def forward(self, uncertainty_vessel, uncertainty_background, x_out, uncertainty_coords, threshold2):
+        B = x_out.shape[0]
+        
         # Normalize
         uncertainty_vessel_normalized = (uncertainty_vessel - uncertainty_vessel.min()) / (uncertainty_vessel.max() - uncertainty_vessel.min())
         uncertainty_background_normalized = (uncertainty_background - uncertainty_background.min()) / (uncertainty_background.max() - uncertainty_background.min())
@@ -190,15 +230,17 @@ class UncertaintyCheck(nn.Module):
         x_min = x_out_reduced.min()
         x_max = x_out_reduced.max()
 
-        # Modify x_out based on uncertainty_coords
-        coords_indexing = uncertainty_coords.squeeze(0).long()
-
-        # 两种条件满足其一即认为是血管像素
-        condition_mask = (uncertainty_vessel_reduced[0, 0] > threshold2) | (
-                    uncertainty_background_reduced[0, 0] > threshold2)
-        # Use advanced indexing to update x_out_reduced where the condition is True
-        # Expand dims of denorm_val to match the broadcasting requirements
-        x_out_reduced[0, 0, coords_indexing[:, 0], coords_indexing[:, 1]][condition_mask] = x_max
+        # 处理每个batch
+        for b in range(B):
+            if len(uncertainty_coords[b]) > 0 and uncertainty_coords[b].numel() > 0:
+                coords_indexing = uncertainty_coords[b].squeeze(0).long()
+                
+                # 两种条件满足其一即认为是血管像素
+                condition_mask = (uncertainty_vessel_reduced[b, 0] > threshold2) | (
+                            uncertainty_background_reduced[b, 0] > threshold2)
+                
+                if coords_indexing.numel() > 0:
+                    x_out_reduced[b, 0, coords_indexing[:, 0], coords_indexing[:, 1]][condition_mask] = x_max
 
         # Restore the channel dimension of x_out
         x_out_restored = self.conv_expand(x_out_reduced)
@@ -251,22 +293,45 @@ class MambaLayer_ambiguous_scan(nn.Module):
         # #ADDR扫描部分
         extractor = Pixel_Extractor()
         (out_mamba_vessel, out_mamba_background, out_mamba_uncertainty, vessel_coords,
-                    background_coords, uncertainty_coords) = extractor(x_out, self.threshold1, self.threshold2)#B*C*HW
-        n_tokens_ = out_mamba_uncertainty.shape[2:].numel()
-        # 如果全部像素是背景，直接返回
-        if n_tokens_ == 0: return x_out
+                    background_coords, uncertainty_coords) = extractor(x_out, self.threshold1, self.threshold2)
+        
+        # 检查是否有不确定像素
+        has_uncertainty = any(coords.numel() > 0 for coords in uncertainty_coords if len(coords) > 0)
+        if not has_uncertainty: 
+            return x_out
 
-        # Vessel/Background Driven
-        out_mamba_vessel = out_mamba_vessel.squeeze(0)
-        out_mamba_background = out_mamba_background.squeeze(0)
-        out_mamba_uncertainty = out_mamba_uncertainty.squeeze(0)
-        uncertainty_vessel = (Dual_Driving(out_mamba_uncertainty, out_mamba_vessel)).unsqueeze(0)
-        uncertainty_background = (Dual_Driving(out_mamba_uncertainty, out_mamba_background)).unsqueeze(0)
+        # Vessel/Background Driven - 处理每个batch
+        uncertainty_vessel_list = []
+        uncertainty_background_list = []
+        
+        for b in range(B):
+            if len(out_mamba_uncertainty) > b and out_mamba_uncertainty[b].numel() > 0:
+                out_mamba_vessel_b = out_mamba_vessel[b] if len(out_mamba_vessel) > b else torch.empty_like(out_mamba_uncertainty[b])
+                out_mamba_background_b = out_mamba_background[b] if len(out_mamba_background) > b else torch.empty_like(out_mamba_uncertainty[b])
+                
+                uncertainty_vessel_b = Dual_Driving(out_mamba_uncertainty[b], out_mamba_vessel_b)
+                uncertainty_background_b = Dual_Driving(out_mamba_uncertainty[b], out_mamba_background_b)
+                
+                uncertainty_vessel_list.append(uncertainty_vessel_b.unsqueeze(0))
+                uncertainty_background_list.append(uncertainty_background_b.unsqueeze(0))
+            else:
+                # 创建空tensor
+                empty_tensor = torch.empty(1, C, 0, device=x.device)
+                uncertainty_vessel_list.append(empty_tensor)
+                uncertainty_background_list.append(empty_tensor)
+        
+        if uncertainty_vessel_list:
+            uncertainty_vessel = torch.cat(uncertainty_vessel_list, dim=0)
+            uncertainty_background = torch.cat(uncertainty_background_list, dim=0)
+        else:
+            return x_out
+            
         # #检查Driven后的血管像素
         check_uncertainty = UncertaintyCheck(C, C)
         x_out = check_uncertainty(uncertainty_vessel, uncertainty_background, x_out, uncertainty_coords, self.threshold2)
         x_out = (x_out - x_out.min()) / (x_out.max() - x_out.min())
         x_out = x_out * x_mamba
+        
         # 最后mamba块处理
         x_out = x_out.reshape(B, C, n_tokens).transpose(-1, -2)
         x_out = self.vessel_mamba(x_out)
@@ -1099,7 +1164,8 @@ def get_umamba_enc_from_plans(plans_manager: PlansManager,
         conv_op=conv_op,
         kernel_sizes=configuration_manager.conv_kernel_sizes,
         strides=configuration_manager.pool_op_kernel_sizes,
-        num_classes=label_manager.num_segmentation_heads,
+        num_clas
+ses=label_manager.num_segmentation_heads,
         deep_supervision=deep_supervision,
         **conv_or_blocks_per_stage,
         **kwargs[segmentation_network_class_name]
@@ -1109,4 +1175,11 @@ def get_umamba_enc_from_plans(plans_manager: PlansManager,
         model.apply(init_last_bn_before_add_to_0)
 
     return model
+
+
+
+
+
+
+
 
