@@ -127,6 +127,15 @@ unet_config = {"UNet_base_num_features": 32,
 num_stages = len(unet_config["conv_kernel_sizes"])
 conv_op = nn.Conv2d
 
+other_kwargs = {
+'conv_bias': True,
+'norm_op': nn.InstanceNorm2d,
+'norm_op_kwargs': {'eps': 1e-5, 'affine': True},
+'dropout_op': None, 'dropout_op_kwargs': None,
+'nonlin': nn.LeakyReLU, 'nonlin_kwargs': {'inplace': True}
+}
+
+
 def kaiming_normal_init_weight(model):
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
@@ -162,7 +171,7 @@ def train(args, snapshot_path):
         model = SerpMamba(input_channels=1, n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
                                 unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
                                 strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
-                            num_classes=num_classes)
+                            num_classes=num_classes,**other_kwargs)
         if ema:
             for param in model.parameters():
                 param.detach_()
