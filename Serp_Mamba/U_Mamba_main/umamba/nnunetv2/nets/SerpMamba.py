@@ -1164,8 +1164,7 @@ def get_umamba_enc_from_plans(plans_manager: PlansManager,
         conv_op=conv_op,
         kernel_sizes=configuration_manager.conv_kernel_sizes,
         strides=configuration_manager.pool_op_kernel_sizes,
-        num_clas
-ses=label_manager.num_segmentation_heads,
+        num_classes=label_manager.num_segmentation_heads,
         deep_supervision=deep_supervision,
         **conv_or_blocks_per_stage,
         **kwargs[segmentation_network_class_name]
