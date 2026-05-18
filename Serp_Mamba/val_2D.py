@@ -119,9 +119,9 @@ def test_image_fast(image, label, net, classes, patch_size=[256, 256]):
         pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
         prediction = pred
         # image = Image.fromarray(prediction.astype(np.uint8)*255)
-        # image.save('/root/autodl-tmp/Seg_code/output2_image.png')
+        # image.save('/home/lishh237/Serp-Mamba/Seg_code/output2_image.png')
         # image2 = Image.fromarray(label.astype(np.uint8)*255)
-        # image2.save('/root/autodl-tmp/Seg_code/output2_gt.png')
+        # image2.save('/home/lishh237/Serp-Mamba/Seg_code/output2_gt.png')
 
     # 计算并返回每个类别的评估指标
     metric_list1 = []

@@ -23,7 +23,7 @@ print(torch.cuda.is_available())
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--root_path", type=str,
-                    default="/root/autodl-tmp/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test/", help="Name of Experiment")    #最后别加“/”
+                    default="/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test/", help="Name of Experiment")    #最后别加“/”
 parser.add_argument("--exp", type=str, default="SerpMamba", help="experiment_name")
 parser.add_argument('--model', type=str,
                     default='unet', help='data_name')
@@ -201,7 +201,7 @@ def test_single_volume_fast(case,image, label, net, classes, patch_size=[1024, 1
         pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
         prediction = pred
         image = Image.fromarray(prediction.astype(np.uint8) * 255)
-        image.save('/root/autodl-tmp/Serp_Mamba/output2_image.png')
+        image.save('/home/lishh237/Serp-Mamba/Serp_Mamba/output2_image.png')
     metric_list1 = []
     metric_list2 = []
     metric_list3 = []
@@ -220,7 +220,7 @@ def Inference(FLAGS):
     db_val = BaseDataSets(base_dir=FLAGS.root_path, split="val")
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,
                            num_workers=1)
-    folder_path = "/root/autodl-tmp/Serp_Mamba/val1/"  # 加载权重文件
+    folder_path = "/home/lishh237/Serp-Mamba/Serp_Mamba/val1/"  # 加载权重文件
     files = os.listdir(folder_path)
     pth_files = [file for file in files if file.endswith(".pth")]
     sorted_files = sorted(pth_files)
