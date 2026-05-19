@@ -23,7 +23,7 @@ print(torch.cuda.is_available())
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--root_path", type=str,
-                    default="/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test/", help="Name of Experiment")    #最后别加“/”
+                    default="/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test", help="Name of Experiment")    #最后别加“/”
 parser.add_argument("--exp", type=str, default="SerpMamba", help="experiment_name")
 parser.add_argument('--model', type=str,
                     default='unet', help='data_name')

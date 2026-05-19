@@ -4,6 +4,7 @@ import os
 import random
 import sys
 import numpy as np
+np.bool = bool
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -26,7 +27,7 @@ parser.add_argument("--root_path", type=str,
 parser.add_argument("--exp", type=str, default="Serp_Mamba", help="experiment_name")
 parser.add_argument("--model", type=str, default="unet", help="model_name")
 parser.add_argument("--max_iterations", type=int,
-                    default=16000, help="maximum epoch number to train")
+                    default=60, help="maximum epoch number to train")
 parser.add_argument("--batch_size", type=int, default=1,
                     help="batch_size per gpu")
 parser.add_argument("--deterministic", type=int, default=2,
@@ -167,6 +168,8 @@ def train(args, snapshot_path):
     batch_size = args.batch_size
     max_iterations = args.max_iterations
 
+    print("max_iterations:", max_iterations)
+
     def create_model(ema=False):
         model = SerpMamba(input_channels=1, n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
                                 unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
@@ -292,7 +295,7 @@ def train(args, snapshot_path):
                 )
             model.train()
 
-            if iter_num % 2000 == 0:
+            if iter_num % 30 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, "model_iter_" + str(iter_num) + ".pth")
                 util.save_checkpoint(
