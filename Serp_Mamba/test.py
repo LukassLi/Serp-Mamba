@@ -5,6 +5,7 @@ import logging
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
+np.bool = bool
 import SimpleITK as sitk
 import torch
 from medpy import metric
@@ -133,6 +134,15 @@ unet_config = {"UNet_base_num_features": 32,
 num_stages = len(unet_config["conv_kernel_sizes"])
 conv_op = nn.Conv2d
 
+# 与train.py中的other_kwargs保持一致，避免参数不一致导致错误，保证模型结构与训练时完全一致，checkpoint 加载不会再出现 Unexpected key(s) 的错误
+other_kwargs = {
+'conv_bias': True,
+'norm_op': nn.InstanceNorm2d,
+'norm_op_kwargs': {'eps': 1e-5, 'affine': True},
+'dropout_op': None, 'dropout_op_kwargs': None,
+'nonlin': nn.LeakyReLU, 'nonlin_kwargs': {'inplace': True}
+}
+
 
 def calculate_bm(pred, gt):
     # 计算TP, FP, TN, FN
@@ -234,7 +244,7 @@ def Inference(FLAGS):
                 net = SerpMamba(input_channels=1, n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
                                 unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
                                 strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
-                            num_classes=2)
+                            num_classes=FLAGS.num_classes,**other_kwargs)
 
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                 net = net.to(device)
