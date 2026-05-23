@@ -1,0 +1,39 @@
+# Fundus 视网膜血管分割数据集配置
+# 适配 U_Mamba_main/data/fundus_dataset/ 的目录结构
+
+name: "fundus"
+description: "Fundus vessel segmentation dataset (JPG images, PNG masks)"
+
+# 数据集根目录
+root_dir: "U_Mamba_main/data/fundus_dataset"
+
+# 目录布局
+image_dir: "{split}/images"
+label_dir: "{split}/vessel_masks"
+
+# split 名映射
+split_map:
+  train: "training"
+  val: "validation"
+  test: "test"
+
+# 文件匹配
+image_ext: ".jpg"
+label_ext: ".png"
+
+# 标签文件名推导：同名不同扩展名
+label_name_transform:
+  - change_ext: ".png"
+
+# 图像属性
+image_mode: "RGB"         # JPG 彩色图像
+input_channels: 1         # 转灰度送入模型
+label_threshold: 0
+label_rgb_mode: "mean"
+
+# 训练默认超参
+patch_size: [512, 512]
+batch_size: 2
+max_iterations: 20000
+base_lr: 0.0001
+num_classes: 2

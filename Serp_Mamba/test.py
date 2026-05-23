@@ -16,6 +16,7 @@ from tqdm import tqdm
 from PIL import Image
 from networks.net_factory import net_factory
 from dataloaders.dataset import BaseDataSets
+from dataloaders.dataset_registry import load_dataset_config, ConfigDataSets
 from torch.utils.data import DataLoader
 import torch.nn as nn
 from U_Mamba_main.umamba.nnunetv2.nets.SerpMamba import SerpMamba
@@ -54,7 +55,19 @@ parser.add_argument('--eval', action='store_true',
                     help='Perform evaluation only')
 parser.add_argument('--throughput', action='store_true',
                     help='Test throughput only')
+parser.add_argument("--dataset", type=str, default="prime_fp20",
+                    help="Dataset config name or path to YAML file")
+parser.add_argument("--checkpoint_dir", type=str, default=None,
+                    help="Directory containing .pth checkpoint files")
 args = parser.parse_args()
+
+# 加载数据集配置
+cfg_path = args.dataset
+if not cfg_path.endswith('.yaml'):
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'configs', cfg_path + '.yaml')
+dataset_cfg = load_dataset_config(cfg_path)
+if args.root_path != parser.get_default("root_path"):
+    dataset_cfg["root_dir"] = args.root_path
 
 unet_config = {"UNet_base_num_features": 32,
                 "n_conv_per_stage_encoder": [
@@ -211,7 +224,7 @@ def test_single_volume_fast(case,image, label, net, classes, patch_size=[1024, 1
         pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
         prediction = pred
         image = Image.fromarray(prediction.astype(np.uint8) * 255)
-        image.save('/home/lishh237/Serp-Mamba/Serp_Mamba/output2_image.png')
+        image.save(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output_image.png'))
     metric_list1 = []
     metric_list2 = []
     metric_list3 = []
@@ -227,10 +240,12 @@ def test_single_volume_fast(case,image, label, net, classes, patch_size=[1024, 1
 
 
 def Inference(FLAGS):
-    db_val = BaseDataSets(base_dir=FLAGS.root_path, split="val")
+    db_val = ConfigDataSets(config=dataset_cfg, split="val")
     valloader = DataLoader(db_val, batch_size=1, shuffle=False,
                            num_workers=1)
-    folder_path = "/home/lishh237/Serp-Mamba/Serp_Mamba/val1/"  # 加载权重文件
+    folder_path = FLAGS.checkpoint_dir or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "experiments", dataset_cfg["name"])
     files = os.listdir(folder_path)
     pth_files = [file for file in files if file.endswith(".pth")]
     sorted_files = sorted(pth_files)
@@ -241,7 +256,7 @@ def Inference(FLAGS):
 
                 snapshot_path = folder_path+file1
 
-                net = SerpMamba(input_channels=1, n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
+                net = SerpMamba(input_channels=dataset_cfg.get("input_channels", 1), n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
                                 unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
                                 strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
                             num_classes=FLAGS.num_classes,**other_kwargs)

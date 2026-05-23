@@ -17,6 +17,7 @@ from dataloaders.dataset import (
     BaseDataSets,
     RandomGenerator
 )
+from dataloaders.dataset_registry import load_dataset_config, ConfigDataSets
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps, util
 from val_2D import test_single_volume, test_image_fast
@@ -47,8 +48,21 @@ parser.add_argument(
     default=0.8,
     help="confidence threshold for using pseudo-labels",
 )
+parser.add_argument("--dataset", type=str, default="prime_fp20",
+                    help="Dataset config name (without .yaml) or path to YAML file")
+parser.add_argument("--output_dir", type=str, default=None,
+                    help="Output directory for checkpoints and logs (default: auto)")
 
 args = parser.parse_args()
+
+# 加载数据集配置
+cfg_path = args.dataset
+if not cfg_path.endswith('.yaml'):
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'configs', cfg_path + '.yaml')
+dataset_cfg = load_dataset_config(cfg_path)
+# --root_path 可覆盖配置中的 root_dir
+if args.root_path != parser.get_default("root_path"):
+    dataset_cfg["root_dir"] = args.root_path
 
 unet_config = {"UNet_base_num_features": 32,
                 "n_conv_per_stage_encoder": [
@@ -163,15 +177,20 @@ def get_current_consistency_weight(epoch):
 
 
 def train(args, snapshot_path):
-    base_lr = args.base_lr
-    num_classes = args.num_classes
-    batch_size = args.batch_size
-    max_iterations = args.max_iterations
+    # 超参优先级：argparse 显式传入 > config YAML > argparse 默认值
+    base_lr = (args.base_lr if args.base_lr != parser.get_default("base_lr")
+               else dataset_cfg.get("base_lr", args.base_lr))
+    num_classes = (args.num_classes if args.num_classes != parser.get_default("num_classes")
+                   else dataset_cfg.get("num_classes", args.num_classes))
+    batch_size = (args.batch_size if args.batch_size != parser.get_default("batch_size")
+                  else dataset_cfg.get("batch_size", args.batch_size))
+    max_iterations = (args.max_iterations if args.max_iterations != parser.get_default("max_iterations")
+                      else dataset_cfg.get("max_iterations", args.max_iterations))
 
     print("max_iterations:", max_iterations)
 
     def create_model(ema=False):
-        model = SerpMamba(input_channels=1, n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
+        model = SerpMamba(input_channels=dataset_cfg.get("input_channels", 1), n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
                                 unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
                                 strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
                             num_classes=num_classes,**other_kwargs)
@@ -184,9 +203,10 @@ def train(args, snapshot_path):
         random.seed(args.seed + worker_id)
 
 
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", transform=RandomGenerator(args.patch_size))
+    patch_size = dataset_cfg.get("patch_size", args.patch_size)
+    db_train = ConfigDataSets(config=dataset_cfg, split="train", transform=RandomGenerator(patch_size))
     with torch.no_grad():
-        db_val = BaseDataSets(base_dir=args.root_path, split="val")
+        db_val = ConfigDataSets(config=dataset_cfg, split="val")
 
     model = create_model()
     model.cuda()
@@ -204,7 +224,7 @@ def train(args, snapshot_path):
 
     ce_loss = CrossEntropyLoss()
 
-    writer = SummaryWriter("/home/lishh237/Serp-Mamba/Serp_Mamba/tf-logs/")
+    writer = SummaryWriter(os.path.join(snapshot_path, "tf-logs"))
     logging.info("{} iterations per epoch".format(len(trainloader)))
 
     max_epoch = max_iterations // len(trainloader) + 1
@@ -254,7 +274,7 @@ def train(args, snapshot_path):
                             sampled_batch["label"],
                             model,
                             classes=num_classes,
-                            patch_size=args.patch_size
+                            patch_size=patch_size
                         )
                         metric_list += np.array(metric_i)
                         metric_list2 += np.array(metric_i2)
@@ -324,8 +344,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    snapshot_path = "/home/lishh237/Serp-Mamba/Serp_Mamba/{}_{}".format(
-        args.exp, args.model)
+    snapshot_path = args.output_dir or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "experiments", dataset_cfg["name"])
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
 
