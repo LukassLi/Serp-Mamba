@@ -27,7 +27,7 @@ parser.add_argument("--root_path", type=str,
 parser.add_argument("--exp", type=str, default="Serp_Mamba", help="experiment_name")
 parser.add_argument("--model", type=str, default="unet", help="model_name")
 parser.add_argument("--max_iterations", type=int,
-                    default=60, help="maximum epoch number to train")
+                    default=16000, help="maximum epoch number to train")
 parser.add_argument("--batch_size", type=int, default=1,
                     help="batch_size per gpu")
 parser.add_argument("--deterministic", type=int, default=2,
@@ -295,7 +295,7 @@ def train(args, snapshot_path):
                 )
             model.train()
 
-            if iter_num % 30 == 0:
+            if iter_num % 2000 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, "model_iter_" + str(iter_num) + ".pth")
                 util.save_checkpoint(
