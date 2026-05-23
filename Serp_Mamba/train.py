@@ -208,6 +208,11 @@ def train(args, snapshot_path):
     with torch.no_grad():
         db_val = ConfigDataSets(config=dataset_cfg, split="val")
 
+    # 回归测试 (记录数据集信息
+    logging.info(f"[BASELINE] dataset: train={len(db_train)}, val={len(db_val)}")
+    sample = db_train[0]
+    logging.info(f"[BASELINE] sample keys={list(sample.keys())}, image={sample['image'].shape}, label={sample['label'].shape}")    
+
     model = create_model()
     model.cuda()
     iter_num = 0
@@ -240,15 +245,30 @@ def train(args, snapshot_path):
                 sampled_batch["image"],
                 sampled_batch["label"],
             )
+
+            # 记录第1个batch的图像/标签统计
+            logging.info(f"[BASELINE] image shape={image_batch.shape}, dtype={image_batch.dtype}, "
+                        f"min={image_batch.min():.4f}, max={image_batch.max():.4f}, mean={image_batch.mean():.4f}")
+            logging.info(f"[BASELINE] label shape={label_batch.shape}, unique={torch.unique(label_batch).tolist()}")
+            
+
             image_batch, label_batch = (
                 image_batch.cuda(),
                 label_batch.cuda(),
             )
             outputs = model(image_batch)
             outputs_soft = torch.softmax(outputs, dim=1)
+
+            # 回归测试记录（模型输出后）
+            logging.info(f"[BASELINE] output shape={outputs.shape}, softmax range=[{outputs_soft.min():.4f}, {outputs_soft.max():.4f}]")
+
             # print(outputs_soft.shape)
             loss = 0.5 * (ce_loss(outputs, label_batch.long(
             )) + losses.dice_loss(outputs_soft[:, 1, ...], label_batch))
+            
+            # 回归测试记录(loss计算)
+            logging.info(f"[BASELINE] loss={loss.item():.6f}, ce={ce_loss(outputs, label_batch.long()).item():.6f}, "
+                        f"dice={losses.dice_loss(outputs_soft[:, 1, ...], label_batch).item():.6f}")
 
             optimizer.zero_grad()
             loss.backward()
@@ -281,6 +301,9 @@ def train(args, snapshot_path):
                     epoch_loss = 0
                     metric_list = metric_list / len(db_val)
                     metric_list2 = metric_list2 / len(db_val)
+
+                    # 回归测试记录（验证指标）
+                    logging.info(f"[BASELINE] val iter={iter_num}, dice={np.mean(metric_list):.6f}, iou={np.mean(metric_list2):.6f}")
 
                 for class_i in range(num_classes - 1):
                     writer.add_scalar(
