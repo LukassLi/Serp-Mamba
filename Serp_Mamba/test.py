@@ -61,6 +61,8 @@ parser.add_argument("--checkpoint_dir", type=str, default=None,
                     help="Directory containing .pth checkpoint files")
 parser.add_argument("--split", type=str, default="test",
                     help="Dataset split to evaluate: test, val, or train")
+parser.add_argument('--test_all', action='store_true',
+                    help='Test all .pth checkpoints instead of only best model')
 parser.add_argument("--save_dir", type=str, default=None,
                     help="Directory to save per-image predictions and metrics (default: experiments/<dataset>/test_results)")
 args = parser.parse_args()
@@ -260,7 +262,17 @@ def Inference(FLAGS):
 
     files = os.listdir(folder_path)
     pth_files = [file for file in files if file.endswith(".pth")]
-    sorted_files = sorted(pth_files)
+
+    # 默认只测试 best model，--test_all 时遍历所有 checkpoint
+    if not FLAGS.test_all:
+        best_candidates = [f for f in pth_files if "best_model" in f]
+        if best_candidates:
+            sorted_files = sorted(best_candidates)
+        else:
+            print("Warning: no *_best_model.pth found, falling back to all .pth files")
+            sorted_files = sorted(pth_files)
+    else:
+        sorted_files = sorted(pth_files)
 
     patch_size = dataset_cfg.get("patch_size", FLAGS.patch_size)
 
@@ -277,12 +289,8 @@ def Inference(FLAGS):
 
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             net = net.to(device)
-            if FLAGS.checkpoint == "best":
-                save_mode_path = snapshot_path
-            else:
-                save_mode_path = os.path.join(snapshot_path, 'model_iter_60000.pth')
-            net.load_state_dict(torch.load(save_mode_path)["state_dict"])
-            print("init weight from {}".format(save_mode_path))
+            net.load_state_dict(torch.load(snapshot_path)["state_dict"])
+            print("init weight from {}".format(snapshot_path))
             net.eval()
 
             metric_list = []
@@ -346,5 +354,5 @@ def Inference(FLAGS):
 if __name__ == '__main__':
     FLAGS = parser.parse_args()
     metric = Inference(FLAGS)
-    print(FLAGS.root_path)
-    print('Model = ',FLAGS.exp)
+    print("Dataset:", dataset_cfg["name"])
+    print("Model:", FLAGS.exp)

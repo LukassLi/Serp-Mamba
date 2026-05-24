@@ -20,7 +20,9 @@ from dataloaders.dataset import (
 from dataloaders.dataset_registry import load_dataset_config, ConfigDataSets
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps, util
+from utils.train_stats import TrainStats
 from val_2D import test_single_volume, test_image_fast
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--root_path", type=str,
@@ -177,6 +179,8 @@ def get_current_consistency_weight(epoch):
 
 
 def train(args, snapshot_path):
+    t_train_start = time.time()
+
     # 超参优先级：argparse 显式传入 > config YAML > argparse 默认值
     base_lr = (args.base_lr if args.base_lr != parser.get_default("base_lr")
                else dataset_cfg.get("base_lr", args.base_lr))
@@ -209,12 +213,13 @@ def train(args, snapshot_path):
         db_val = ConfigDataSets(config=dataset_cfg, split="val")
 
     # 回归测试 (记录数据集信息
-    logging.info(f"[BASELINE] dataset: train={len(db_train)}, val={len(db_val)}")
+    logging.debug(f"[BASELINE] dataset: train={len(db_train)}, val={len(db_val)}")
     sample = db_train[0]
-    logging.info(f"[BASELINE] sample keys={list(sample.keys())}, image={sample['image'].shape}, label={sample['label'].shape}")    
+    logging.debug(f"[BASELINE] sample keys={list(sample.keys())}, image={sample['image'].shape}, label={sample['label'].shape}")
 
     model = create_model()
     model.cuda()
+    stats = TrainStats(snapshot_path)
     iter_num = 0
     start_epoch = 0
     optimizer = torch.optim.Adam(model.parameters(), lr=base_lr, weight_decay=0.0001)
@@ -239,6 +244,7 @@ def train(args, snapshot_path):
     iterator = tqdm(range(start_epoch, max_epoch), ncols=120)
 
     for epoch_num in iterator:
+        t_epoch_start = time.time()
 
         for i_batch, sampled_batch in enumerate(trainloader):
             image_batch, label_batch = (
@@ -247,9 +253,9 @@ def train(args, snapshot_path):
             )
 
             # 记录第1个batch的图像/标签统计
-            logging.info(f"[BASELINE] image shape={image_batch.shape}, dtype={image_batch.dtype}, "
+            logging.debug(f"[BASELINE] image shape={image_batch.shape}, dtype={image_batch.dtype}, "
                         f"min={image_batch.min():.4f}, max={image_batch.max():.4f}, mean={image_batch.mean():.4f}")
-            logging.info(f"[BASELINE] label shape={label_batch.shape}, unique={torch.unique(label_batch).tolist()}")
+            logging.debug(f"[BASELINE] label shape={label_batch.shape}, unique={torch.unique(label_batch).tolist()}")
             
 
             image_batch, label_batch = (
@@ -260,14 +266,14 @@ def train(args, snapshot_path):
             outputs_soft = torch.softmax(outputs, dim=1)
 
             # 回归测试记录（模型输出后）
-            logging.info(f"[BASELINE] output shape={outputs.shape}, softmax range=[{outputs_soft.min():.4f}, {outputs_soft.max():.4f}]")
+            logging.debug(f"[BASELINE] output shape={outputs.shape}, softmax range=[{outputs_soft.min():.4f}, {outputs_soft.max():.4f}]")
 
             # print(outputs_soft.shape)
             loss = 0.5 * (ce_loss(outputs, label_batch.long(
             )) + losses.dice_loss(outputs_soft[:, 1, ...], label_batch))
             
             # 回归测试记录(loss计算)
-            logging.info(f"[BASELINE] loss={loss.item():.6f}, ce={ce_loss(outputs, label_batch.long()).item():.6f}, "
+            logging.debug(f"[BASELINE] loss={loss.item():.6f}, ce={ce_loss(outputs, label_batch.long()).item():.6f}, "
                         f"dice={losses.dice_loss(outputs_soft[:, 1, ...], label_batch).item():.6f}")
 
             optimizer.zero_grad()
@@ -280,6 +286,10 @@ def train(args, snapshot_path):
                 param_group["lr"] = lr_
 
             writer.add_scalar("lr", lr_, iter_num)
+            writer.add_scalar("loss/model_loss", loss, iter_num)
+            stats.log_train_step(iter_num, loss.item(),
+                ce_loss(outputs, label_batch.long()).item(),
+                losses.dice_loss(outputs_soft[:, 1, ...], label_batch).item(), lr_)
             writer.add_scalar("loss/model_loss", loss, iter_num)
 
 
@@ -303,17 +313,23 @@ def train(args, snapshot_path):
                     metric_list2 = metric_list2 / len(db_val)
 
                     # 回归测试记录（验证指标）
-                    logging.info(f"[BASELINE] val iter={iter_num}, dice={np.mean(metric_list):.6f}, iou={np.mean(metric_list2):.6f}")
+                    logging.debug(f"[BASELINE] val iter={iter_num}, dice={np.mean(metric_list):.6f}, iou={np.mean(metric_list2):.6f}")
 
                 for class_i in range(num_classes - 1):
                     writer.add_scalar(
-                        "info/model_val_{}_dice/iou".format(class_i + 1),
+                        "info/model_val_{}_dice".format(class_i + 1),
                         metric_list[class_i],
+                        iter_num,
+                    )
+                    writer.add_scalar(
+                        "info/model_val_{}_iou".format(class_i + 1),
+                        metric_list2[class_i],
                         iter_num,
                     )
 
                 performance = np.mean(metric_list)
-                performance2 =np.mean(metric_list2)
+                performance2 = np.mean(metric_list2)
+                stats.log_val_step(iter_num, performance, performance2)
                 if performance > best_performance:
                     best_performance = performance
                     save_mode_path = os.path.join(
@@ -347,10 +363,15 @@ def train(args, snapshot_path):
 
             if iter_num >= max_iterations:
                 break
+        stats.log_epoch_time(epoch_num, time.time() - t_epoch_start)
         if iter_num >= max_iterations:
             iterator.close()
             break
 
+    stats.plot_all(dataset_name=dataset_cfg["name"],
+                   total_iters=iter_num,
+                   total_epochs=epoch_num + 1,
+                   total_time_s=time.time() - t_train_start)
     writer.close()
 
 

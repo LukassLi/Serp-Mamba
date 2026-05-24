@@ -4,18 +4,22 @@
 name: "PRIME-FP20"
 description: "PRIME-FP20 UWF-SLO retinal vessel segmentation dataset"
 
-# 数据集根目录（通过 --root_path 覆盖，或在此处指定实际路径）
-root_dir: "PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
+# 各 split 的数据根目录（train/val 和 test 在不同路径下）
+root_dir:
+  train: "/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
+  val: "/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
+  test: "/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test"
+
+# split 名到实际目录名的映射
+# test 路径 val1_test 下的目录名为 val_image/val_label
+split_map:
+  train: "training"
+  val: "val"
+  test: "val"
 
 # 目录布局：{split} 由 split_map 映射后替换
 image_dir: "{split}_image"
 label_dir: "{split}_label"
-
-# split 名到实际目录名的映射
-split_map:
-  train: "training"
-  val: "val"
-  test: "test"
 
 # 文件匹配
 image_ext: ".tif"

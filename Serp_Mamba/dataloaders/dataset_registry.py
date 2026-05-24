@@ -57,12 +57,16 @@ class ConfigDataSets(Dataset):
 
         # 通过 split_map 将内部 split 名映射到实际目录名
         dir_split = config["split_map"].get(split, split)
+        # root_dir 支持字符串（所有 split 共用）或 dict（按 split 分别指定）
+        root = config["root_dir"]
+        if isinstance(root, dict):
+            root = root[split]
         self.image_dir = os.path.join(
-            config["root_dir"],
+            root,
             config["image_dir"].replace("{split}", dir_split)
         )
         self.label_dir = os.path.join(
-            config["root_dir"],
+            root,
             config["label_dir"].replace("{split}", dir_split)
         )
 
