@@ -66,7 +66,9 @@ class ConfigDataSets(Dataset):
             config["label_dir"].replace("{split}", dir_split)
         )
 
-        self.sample_list = sorted(os.listdir(self.image_dir))
+        # TODO: 启用 sorted() 可使文件顺序跨平台确定化，但会改变与 BaseDataSets 的数据遍历顺序。
+        #       回归验证通过后建议启用，提升可复现性。
+        self.sample_list = os.listdir(self.image_dir)
         # 按配置的扩展名过滤
         if "image_ext" in config:
             ext = config["image_ext"]
@@ -79,9 +81,14 @@ class ConfigDataSets(Dataset):
         return len(self.sample_list)
 
     def _load_image(self, path: str) -> np.ndarray:
-        """按配置的颜色模式加载图像。"""
+        """按配置的颜色模式加载图像，若 input_channels=1 则转为灰度。"""
+        img = Image.open(path)
         mode = self.config.get("image_mode", "L")
-        return np.array(Image.open(path).convert(mode))
+        img = img.convert(mode)
+        # input_channels=1 时确保返回 2D 灰度数组，兼容 RandomGenerator
+        if self.config.get("input_channels", 1) == 1 and img.mode != "L":
+            img = img.convert("L")
+        return np.array(img)
 
     def _load_label(self, image_filename: str) -> np.ndarray:
         """推导标签文件名并加载标签掩码。"""

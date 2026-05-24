@@ -59,6 +59,10 @@ parser.add_argument("--dataset", type=str, default="prime_fp20",
                     help="Dataset config name or path to YAML file")
 parser.add_argument("--checkpoint_dir", type=str, default=None,
                     help="Directory containing .pth checkpoint files")
+parser.add_argument("--split", type=str, default="test",
+                    help="Dataset split to evaluate: test, val, or train")
+parser.add_argument("--save_dir", type=str, default=None,
+                    help="Directory to save per-image predictions and metrics (default: experiments/<dataset>/test_results)")
 args = parser.parse_args()
 
 # 加载数据集配置
@@ -200,7 +204,7 @@ def calculate_metric_percase2(pred, gt):
         return 0
 
 #2d
-def test_single_volume_fast(case,image, label, net, classes, patch_size=[1024, 1024]):
+def test_single_volume_fast(case, image, label, net, classes, patch_size=[1024, 1024], save_path=None):
     # 将输入图像和标签转换为numpy数组
     image, label = image.squeeze().cpu().detach().numpy(), label.squeeze().cpu().detach().numpy()
 
@@ -220,11 +224,12 @@ def test_single_volume_fast(case,image, label, net, classes, patch_size=[1024, 1
         # print(softmax_probs.shape)
         out = torch.argmax(softmax_probs, dim=1)
         out = out.cpu().detach().numpy().squeeze()
-        # print("out,=",out)
         pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
         prediction = pred
-        image = Image.fromarray(prediction.astype(np.uint8) * 255)
-        image.save(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output_image.png'))
+        if save_path is not None:
+            # 按原始文件名保存预测掩码（白色=血管，黑色=背景）
+            pred_img = Image.fromarray(prediction.astype(np.uint8) * 255)
+            pred_img.save(save_path)
     metric_list1 = []
     metric_list2 = []
     metric_list3 = []
@@ -240,75 +245,102 @@ def test_single_volume_fast(case,image, label, net, classes, patch_size=[1024, 1
 
 
 def Inference(FLAGS):
-    db_val = ConfigDataSets(config=dataset_cfg, split="val")
-    valloader = DataLoader(db_val, batch_size=1, shuffle=False,
+    split = FLAGS.split
+    db_test = ConfigDataSets(config=dataset_cfg, split=split)
+    testloader = DataLoader(db_test, batch_size=1, shuffle=False,
                            num_workers=1)
     folder_path = FLAGS.checkpoint_dir or os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "experiments", dataset_cfg["name"])
+
+    # 输出目录：保存预测掩码和指标
+    save_dir = FLAGS.save_dir or os.path.join(folder_path, "test_results")
+    pred_dir = os.path.join(save_dir, "predictions")
+    os.makedirs(pred_dir, exist_ok=True)
+
     files = os.listdir(folder_path)
     pth_files = [file for file in files if file.endswith(".pth")]
     sorted_files = sorted(pth_files)
-    with open(folder_path+'output.txt', 'a') as file:
+
+    patch_size = dataset_cfg.get("patch_size", FLAGS.patch_size)
+
+    with open(os.path.join(save_dir, 'output.txt'), 'w') as file:
         for file1 in sorted_files:
-            # if file1 == "unet_best_model.pth":
-                print(folder_path+file1)
+            print(os.path.join(folder_path, file1))
 
-                snapshot_path = folder_path+file1
+            snapshot_path = os.path.join(folder_path, file1)
 
-                net = SerpMamba(input_channels=dataset_cfg.get("input_channels", 1), n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
-                                unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
-                                strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
-                            num_classes=FLAGS.num_classes,**other_kwargs)
+            net = SerpMamba(input_channels=dataset_cfg.get("input_channels", 1), n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
+                            unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
+                            strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
+                        num_classes=FLAGS.num_classes,**other_kwargs)
 
-                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                net = net.to(device)
-                if FLAGS.checkpoint == "best":
-                    save_mode_path = snapshot_path
-                else:
-                    save_mode_path = os.path.join(snapshot_path, 'model_iter_60000.pth')
-                net.load_state_dict(torch.load(save_mode_path)["state_dict"])
-                # net.load_state_dict(torch.load(save_mode_path, map_location=torch.device('cpu'))["state_dict"])
-                print("init weight from {}".format(save_mode_path))
-                net.eval()
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            net = net.to(device)
+            if FLAGS.checkpoint == "best":
+                save_mode_path = snapshot_path
+            else:
+                save_mode_path = os.path.join(snapshot_path, 'model_iter_60000.pth')
+            net.load_state_dict(torch.load(save_mode_path)["state_dict"])
+            print("init weight from {}".format(save_mode_path))
+            net.eval()
 
-                metric_list = []
-                metric_list2 = []
-                metric_list3 = []
-                metric_list4 = []
-                with torch.no_grad():
-                    for i_batch, sampled_batch in enumerate(valloader):
-                        metric_i,metric_i2,metric_i3,metric_i4 = test_single_volume_fast(
-                            sampled_batch["name"], 
-                            sampled_batch["image"],
-                            sampled_batch["label"],
-                            net,
-                            classes=FLAGS.num_classes,
-                        )
-                        metric_list.append(np.array(metric_i))
-                        metric_list2.append(np.array(metric_i2))
-                        metric_list3.append(np.array(metric_i3))
-                        metric_list4.append(np.array(metric_i4))
-                performance = np.mean(metric_list)
-                performance2 =np.mean(metric_list2)
-                performance3 = np.mean(metric_list3)
-                performance4 =np.mean(metric_list4)
-                variance = np.std(metric_list)
-                variance2 = np.std(metric_list2)
-                variance3 = np.std(metric_list3)
-                variance4 = np.std(metric_list4)
-                print("iteration %s : mean_dice: %f" % (file1, performance))
-                print("iteration %s : mean_iou: %f" % (file1, performance2))
-                print("----------------------------\n")
+            metric_list = []
+            metric_list2 = []
+            metric_list3 = []
+            metric_list4 = []
+            with torch.no_grad():
+                for i_batch, sampled_batch in enumerate(testloader):
+                    case_name = sampled_batch["name"][0] if isinstance(sampled_batch["name"], (list, tuple)) else sampled_batch["name"]
+                    # 保存路径：以原始文件名（替换扩展名为 .png）命名
+                    base_name = os.path.splitext(case_name)[0] + ".png"
+                    save_path = os.path.join(pred_dir, base_name)
 
-                # 解释下面的代码：将模型名称、Dice、Iou、MCC、BM写入output.txt文件
-                file.write("model_name = " + snapshot_path + "\n")
+                    metric_i,metric_i2,metric_i3,metric_i4 = test_single_volume_fast(
+                        sampled_batch["name"],
+                        sampled_batch["image"],
+                        sampled_batch["label"],
+                        net,
+                        classes=FLAGS.num_classes,
+                        patch_size=patch_size,
+                        save_path=save_path,
+                    )
+                    metric_list.append(np.array(metric_i))
+                    metric_list2.append(np.array(metric_i2))
+                    metric_list3.append(np.array(metric_i3))
+                    metric_list4.append(np.array(metric_i4))
 
-                file.write("Dice = mean-sd = " + str(performance) + "-" + str(variance) + "\n")
-                file.write("Iou = mean-sd = " + str(performance2) + "-" + str(variance2) + "\n")
-                file.write("MCC = mean-sd = " + str(performance3) + "-" + str(variance3) + "\n")
-                file.write("BM = mean-sd = " + str(performance4) + "-" + str(variance4) + "\n")
-                file.write("\n")
+            performance = np.mean(metric_list)
+            performance2 = np.mean(metric_list2)
+            performance3 = np.mean(metric_list3)
+            performance4 = np.mean(metric_list4)
+            variance = np.std(metric_list)
+            variance2 = np.std(metric_list2)
+            variance3 = np.std(metric_list3)
+            variance4 = np.std(metric_list4)
+            print("iteration %s : mean_dice: %f" % (file1, performance))
+            print("iteration %s : mean_iou: %f" % (file1, performance2))
+            print("----------------------------\n")
+
+            # 写入汇总指标
+            file.write("model_name = " + snapshot_path + "\n")
+            file.write("split = " + split + "\n")
+            file.write("num_samples = %d\n" % len(db_test))
+            file.write("Dice = mean-sd = " + str(performance) + "-" + str(variance) + "\n")
+            file.write("Iou = mean-sd = " + str(performance2) + "-" + str(variance2) + "\n")
+            file.write("MCC = mean-sd = " + str(performance3) + "-" + str(variance3) + "\n")
+            file.write("BM = mean-sd = " + str(performance4) + "-" + str(variance4) + "\n")
+
+            # 写入逐图指标
+            file.write("\nper-image results:\n")
+            for i in range(len(db_test)):
+                case_name = db_test.sample_list[i]
+                file.write("  %s: dice=%.6f, iou=%.6f, mcc=%.6f, bm=%.6f\n" % (
+                    case_name, metric_list[i][0], metric_list2[i][0],
+                    metric_list3[i][0], metric_list4[i][0]))
+            file.write("\n")
+
+    print("results saved to {}".format(save_dir))
 
 
 if __name__ == '__main__':

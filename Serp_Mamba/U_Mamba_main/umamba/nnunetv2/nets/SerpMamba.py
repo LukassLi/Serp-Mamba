@@ -141,7 +141,9 @@ class Pixel_Extractor(nn.Module):
         feature_map1_list, feature_map2_list, feature_map3_list, coords1_list, coords2_list, coords_list = extract_features_with_thresholds(
             feature_map, feature_map_norm, threshold1, threshold2)
 
-        # 将列表转换为tensor，处理空tensor的情况
+        # NOTE: batch_size 必须为 1。cat 假设各 batch item 的像素数相同，但不同图像
+        # 落入各阈值区间的像素数不同，batch_size>1 时 cat 会因维度不匹配而崩溃。
+        # 当 batch_size=1 时 cat 退化为恒等操作（列表仅含一个元素）。
         if all(fm.numel() > 0 for fm in feature_map1_list):
             feature_map1 = torch.cat(feature_map1_list, dim=0)
         else:
