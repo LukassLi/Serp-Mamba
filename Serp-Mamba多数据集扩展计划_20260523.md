@@ -524,3 +524,117 @@ cat experiments/DRIVE/training_report.txt
 - **无独立 val 集**：DRIVE 标准做法是训练集 20 张训练、测试集 20 张评估，无中间验证。当前配置将 `val` 映射到 `test`，训练过程中的 val 指标即测试指标。
 - **FOV 掩膜**：DRIVE 提供 `mask/` 视野掩膜用于限定评估区域。当前流程未使用 FOV 掩膜，指标在全图计算。如需严格按 DRIVE 论文标准评估（仅 FOV 内计算指标），需后续扩展。
 - **图像尺寸**：DRIVE 分辨率 (565×584) 远小于 PRIME-FP20，`patch_size: 512` 已接近全图尺寸，数据增强的随机裁剪效果有限。
+
+---
+
+## 10. 无标签数据集推理支持
+
+> 时间戳：2026-05-26
+
+### 10.1 背景
+
+部分数据集（如 FIRE）只有原始眼底图像，没有分割标注。用户希望用已有模型（如 DRIVE 训练出的模型）对这些数据集进行跨数据集推理，仅输出分割掩码，不计算指标。
+
+### 10.2 实施内容
+
+**修改 2 个文件，约 25 行改动，不破坏已有功能：**
+
+#### `dataloaders/dataset_registry.py`
+
+- `ConfigDataSets.__init__`：新增 `self.has_labels = config.get("has_labels", True)`
+- `ConfigDataSets.__getitem__`：`has_labels=False` 时跳过 `_load_label()`，返回与图像同尺寸的零填充 dummy label
+
+#### `test.py`
+
+- `test_single_volume_fast`：新增 `has_label` 参数，`False` 时保存预测掩码后直接返回空指标
+- `Inference` 函数：从配置读取 `has_labels`，传递给测试函数；无标签时跳过指标聚合，`output.txt` 仅记录模型信息和预测文件列表
+
+### 10.3 设计依据
+
+- **为什么返回 dummy label 而非 None**：下游 `DataLoader` 的 collate 机制要求 batch 内所有样本的 tensor 形状一致。返回与图像同尺寸的零数组，既满足 collate 约束，又不触发 metric 计算（被 `has_label` 条件跳过）。
+- **为什么在 config 层而非命令行控制**：一个数据集是否有标签是数据集的固有属性，不是运行时选择。用 YAML 的 `has_labels` 字段表达，与 `image_mode`、`input_channels` 等属性一致。
+
+### 10.4 实例：FIRE 数据集配置
+
+FIRE (Fundus Image Registration Dataset) 的 Ground Truth 为配准控制点（非分割标签），仅用于无标签推理。
+
+#### 数据集概况
+
+| 属性 | 值 |
+|------|-----|
+| 名称 | FIRE |
+| 图像分辨率 | 2912 × 2912 |
+| 图像格式 | JPG (RGB 彩色) |
+| 标注 | 配准控制点（`.txt`），非分割标签 |
+| 分类 | A (28), A-Robotic (110), B-Manual (160), P (98), S (142) |
+
+#### 目录结构
+
+```
+datasets/dataset_fire/
+├── A/                          # 28 张配对图像
+│   ├── Images/                 # A01_1.jpg, A01_2.jpg, ...
+│   └── Ground Truth/           # control_points_*.txt（配准标签，忽略）
+├── A-Robotic/                  # 110 张
+│   ├── Images/
+│   └── Ground Truth/
+├── B-Manual/                   # 160 张
+│   ├── Images/
+│   └── Ground Truth/
+├── P/                          # 98 张
+│   ├── Images/
+│   └── Ground Truth/
+└── S/                          # 142 张
+    ├── Images/
+    └── Ground Truth/
+```
+
+#### 配置要点
+
+- `has_labels: false`：无分割标签，跳过标签加载和 `label_dir` 必填校验
+- `image_dir: "{split}/Images"`：`{split}` 对应分类目录名（A, A-Robotic 等）
+- `split_map` 中 `test: "A"` 为默认分类；其他分类不在 map 中，通过 `--split` 直接指定目录名
+- `patch_size: [1024, 1024]`：FIRE 图像分辨率高 (2912×2912)
+
+### 10.5 FIRE 推理命令
+
+```bash
+# 用 DRIVE 训练的模型预测 FIRE-A 分类（默认，28 张）
+python test.py --dataset fire --checkpoint_dir experiments/DRIVE
+
+# 预测其他分类
+python test.py --dataset fire --split A-Robotic --checkpoint_dir experiments/DRIVE
+python test.py --dataset fire --split B-Manual --checkpoint_dir experiments/DRIVE
+python test.py --dataset fire --split P --checkpoint_dir experiments/DRIVE
+python test.py --dataset fire --split S --checkpoint_dir experiments/DRIVE
+
+# 指定输出目录
+python test.py --dataset fire --checkpoint_dir experiments/DRIVE --save_dir results/fire_A
+
+# 遍历所有 checkpoint 生成预测
+python test.py --dataset fire --split A-Robotic --checkpoint_dir experiments/DRIVE --test_all
+
+# 用其他数据集训练的模型预测
+python test.py --dataset fire --checkpoint_dir experiments/fundus
+python test.py --dataset fire --checkpoint_dir experiments/PRIME-FP20
+```
+
+### 10.6 无标签模式输出
+
+```
+test_results/
+├── predictions/          # 分割掩码（白色=血管，黑色=背景）
+│   ├── A01_1.png
+│   ├── A01_2.png
+│   └── ...
+└── output.txt           # 仅含模型信息，无指标
+```
+
+`output.txt` 内容：
+
+```
+model_name = experiments/DRIVE/unet_best_model.pth
+split = A
+num_samples = 28
+note = no ground truth labels, predictions only
+```
