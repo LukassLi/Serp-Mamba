@@ -6,9 +6,9 @@ description: "PRIME-FP20 UWF-SLO retinal vessel segmentation dataset"
 
 # 各 split 的数据根目录（train/val 和 test 在不同路径下）
 root_dir:
-  train: "/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
-  val: "/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
-  test: "/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test"
+  train: "datasets/PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
+  val: "datasets/PRIME-FP20_DataPort/PRIME-FP20-after-VAL1"
+  test: "datasets/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test"
 
 # split 名到实际目录名的映射
 # test 路径 val1_test 下的目录名为 val_image/val_label

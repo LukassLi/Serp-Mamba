@@ -1,0 +1,43 @@
+# DRIVE 视网膜血管分割数据集配置
+# 目录结构：{split}/images/, {split}/1st_manual/, {split}/mask/
+# 1st_manual 为第一观察者手工标注，2nd_manual 忽略
+# mask 为 FOV 视野掩膜（当前流程未使用）
+
+name: "DRIVE"
+description: "DRIVE: Digital Retinal Images for Vessel Extraction"
+
+root_dir: "datasets/DRIVE"
+
+# 目录布局
+image_dir: "{split}/images"
+label_dir: "{split}/1st_manual"
+
+# split 名映射（DRIVE 无独立 val 划分，用 test 代替）
+split_map:
+  train: "training"
+  val: "test"
+  test: "test"
+
+# 文件匹配
+image_ext: ".tif"
+
+# 标签文件名推导：
+#   21_training.tif -> 21_manual1.gif
+#   01_test.tif     -> 01_manual1.gif
+label_name_transform:
+  - replace: ["_training", "_manual1"]
+  - replace: ["_test", "_manual1"]
+  - change_ext: ".gif"
+
+# 图像属性
+image_mode: "RGB"         # DRIVE 图像为 RGB 彩色 TIFF
+input_channels: 1         # 转灰度送入模型
+label_threshold: 0        # GIF 标签为 0/255 二值，>0 = 血管
+label_rgb_mode: "mean"
+
+# 训练默认超参（DRIVE 图像较小 565x584）
+patch_size: [512, 512]
+batch_size: 1
+max_iterations: 20000
+base_lr: 0.0001
+num_classes: 2

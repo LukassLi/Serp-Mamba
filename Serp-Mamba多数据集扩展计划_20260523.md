@@ -17,6 +17,7 @@
 | `dataloaders/dataset_registry.py` | **新建** | ConfigDataSets 类 + 配置加载器（~90行） |
 | `configs/prime_fp20.yaml` | **新建** | PRIME-FP20 配置（复现当前硬编码行为） |
 | `configs/fundus.yaml` | **新建** | fundus_dataset 配置 |
+| `configs/drive.yaml` | **新建** | DRIVE 数据集配置 |
 | `train.py` | **修改** | ~15行：加 `--dataset` 参数，替换 BaseDataSets，参数化路径和 input_channels |
 | `test.py` | **修改** | ~10行：同上模式 |
 | `dataloaders/dataset.py` | 不改 | BaseDataSets 保留，向后兼容 |
@@ -450,3 +451,76 @@ python test.py --dataset prime_fp20
 # 4. 如需对比所有 checkpoint 的性能差异
 python test.py --dataset fundus --test_all
 ```
+
+---
+
+## 9. 新增数据集实例：DRIVE
+
+> 时间戳：2026-05-25
+
+### 9.1 数据集概况
+
+| 属性 | 值 |
+|------|-----|
+| 名称 | DRIVE (Digital Retinal Images for Vessel Extraction) |
+| 图像分辨率 | 565 × 584 |
+| 图像格式 | TIFF (RGB 彩色) |
+| 标签格式 | GIF (灰度二值 0/255) |
+| 训练集 | 20 张 (编号 21-40) |
+| 测试集 | 20 张 (编号 01-20) |
+| 标注 | `1st_manual/`（第一观察者），`2nd_manual/` 忽略 |
+| FOV 掩膜 | `mask/`（当前流程未使用） |
+
+### 9.2 目录结构
+
+```
+datasets/DRIVE/
+├── training/
+│   ├── images/          # 21_training.tif ~ 40_training.tif
+│   ├── 1st_manual/      # 21_manual1.gif ~ 40_manual1.gif
+│   └── mask/            # 21_training_mask.gif ~ 40_training_mask.gif
+└── test/
+    ├── images/          # 01_test.tif ~ 20_test.tif
+    ├── 1st_manual/      # 01_manual1.gif ~ 20_manual1.gif
+    ├── 2nd_manual/      # (忽略)
+    └── mask/            # 01_test_mask.gif ~ 20_test_mask.gif
+```
+
+### 9.3 实施内容
+
+**仅新增 `configs/drive.yaml`，零代码修改。**
+
+配置要点：
+- `label_name_transform`：两条 replace 规则分别处理 `_training` → `_manual1` 和 `_test` → `_manual1`，再加上 `change_ext: ".gif"`
+- `image_mode: "RGB"` + `input_channels: 1`：RGB 图像转灰度送入模型
+- `split_map`：DRIVE 无独立 val 划分，`val` 暂映射到 `test`
+- `patch_size: [512, 512]`：DRIVE 图像较小，使用 512 patch
+
+### 9.4 同步更新
+
+所有数据集已统一存放至 `datasets/` 目录，三个配置的 `root_dir` 路径已同步更新为相对路径：
+
+| 配置文件 | 旧路径 | 新路径 |
+|----------|--------|--------|
+| `prime_fp20.yaml` | `/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/...` | `datasets/PRIME-FP20_DataPort/...` |
+| `fundus.yaml` | `U_Mamba_main/data/fundus_dataset` | `datasets/fundus_dataset` |
+| `drive.yaml` | (新建) | `datasets/DRIVE` |
+
+### 9.5 DRIVE 工作流
+
+```bash
+# 训练
+python train.py --dataset drive --max_iterations 20000
+
+# 测试 best model
+python test.py --dataset drive
+
+# 查看训练报告
+cat experiments/DRIVE/training_report.txt
+```
+
+### 9.6 注意事项
+
+- **无独立 val 集**：DRIVE 标准做法是训练集 20 张训练、测试集 20 张评估，无中间验证。当前配置将 `val` 映射到 `test`，训练过程中的 val 指标即测试指标。
+- **FOV 掩膜**：DRIVE 提供 `mask/` 视野掩膜用于限定评估区域。当前流程未使用 FOV 掩膜，指标在全图计算。如需严格按 DRIVE 论文标准评估（仅 FOV 内计算指标），需后续扩展。
+- **图像尺寸**：DRIVE 分辨率 (565×584) 远小于 PRIME-FP20，`patch_size: 512` 已接近全图尺寸，数据增强的随机裁剪效果有限。
