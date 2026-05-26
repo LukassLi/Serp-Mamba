@@ -1,0 +1,33 @@
+# FIRE 数据集配置
+# FIRE: Fundus Image Registration Dataset
+# Ground Truth 为配准控制点（非分割标签），仅用于无标签推理
+#
+# 目录结构：5 个分类子目录，每个包含 Images/ 和 Ground Truth/
+# 可通过 --split 指定分类：A（默认）, A-Robotic, B-Manual, P, S
+
+name: "FIRE"
+description: "FIRE fundus image registration dataset (no segmentation labels)"
+
+has_labels: false
+
+root_dir: "datasets/dataset_fire"
+
+# 目录布局：{split} 对应分类目录名
+image_dir: "{split}/Images"
+
+# split_map：test 默认使用 A 分类
+# 其他分类直接通过 --split <分类名> 指定（不在此 map 中的值会原样使用）
+split_map:
+  test: "A"
+
+# 文件匹配
+image_ext: ".jpg"
+
+# 图像属性
+image_mode: "RGB"         # JPG 彩色图像 (2912×2912)
+input_channels: 1         # 转灰度送入模型
+
+# 训练/推理超参
+patch_size: [1024, 1024]
+batch_size: 1
+num_classes: 2

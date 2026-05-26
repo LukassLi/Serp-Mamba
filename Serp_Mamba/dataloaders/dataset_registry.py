@@ -16,7 +16,9 @@ def load_dataset_config(config_path: str) -> dict:
     """从 YAML 文件加载数据集配置。"""
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
-    required_fields = ['name', 'root_dir', 'split_map', 'image_dir', 'label_dir']
+    required_fields = ['name', 'root_dir', 'split_map', 'image_dir']
+    if config.get("has_labels", True):
+        required_fields.append('label_dir')
     for field in required_fields:
         if field not in config:
             raise ValueError(f"配置文件 '{config_path}' 缺少必填字段 '{field}'")
@@ -54,6 +56,7 @@ class ConfigDataSets(Dataset):
         self.config = config
         self.split = split
         self.transform = transform
+        self.has_labels = config.get("has_labels", True)
 
         # 通过 split_map 将内部 split 名映射到实际目录名
         dir_split = config["split_map"].get(split, split)
@@ -65,10 +68,11 @@ class ConfigDataSets(Dataset):
             root,
             config["image_dir"].replace("{split}", dir_split)
         )
-        self.label_dir = os.path.join(
-            root,
-            config["label_dir"].replace("{split}", dir_split)
-        )
+        if self.has_labels:
+            self.label_dir = os.path.join(
+                root,
+                config["label_dir"].replace("{split}", dir_split)
+            )
 
         # TODO: 启用 sorted() 可使文件顺序跨平台确定化，但会改变与 BaseDataSets 的数据遍历顺序。
         #       回归验证通过后建议启用，提升可复现性。
@@ -120,7 +124,10 @@ class ConfigDataSets(Dataset):
     def __getitem__(self, idx):
         case = self.sample_list[idx]
         image = self._load_image(os.path.join(self.image_dir, case))
-        label = self._load_label(case)
+        if self.has_labels:
+            label = self._load_label(case)
+        else:
+            label = np.zeros(image.shape[:2], dtype=np.int16)
 
         if self.split == "train" and self.transform is not None:
             sample = {"image": image, "label": label}

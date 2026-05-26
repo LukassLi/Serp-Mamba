@@ -206,7 +206,7 @@ def calculate_metric_percase2(pred, gt):
         return 0
 
 #2d
-def test_single_volume_fast(case, image, label, net, classes, patch_size=[1024, 1024], save_path=None):
+def test_single_volume_fast(case, image, label, net, classes, patch_size=[1024, 1024], save_path=None, has_label=True):
     # 将输入图像和标签转换为numpy数组
     image, label = image.squeeze().cpu().detach().numpy(), label.squeeze().cpu().detach().numpy()
 
@@ -232,6 +232,8 @@ def test_single_volume_fast(case, image, label, net, classes, patch_size=[1024, 
             # 按原始文件名保存预测掩码（白色=血管，黑色=背景）
             pred_img = Image.fromarray(prediction.astype(np.uint8) * 255)
             pred_img.save(save_path)
+    if not has_label:
+        return [], [], [], []
     metric_list1 = []
     metric_list2 = []
     metric_list3 = []
@@ -275,6 +277,7 @@ def Inference(FLAGS):
         sorted_files = sorted(pth_files)
 
     patch_size = dataset_cfg.get("patch_size", FLAGS.patch_size)
+    has_label = dataset_cfg.get("has_labels", True)
 
     with open(os.path.join(save_dir, 'output.txt'), 'w') as file:
         for file1 in sorted_files:
@@ -312,41 +315,51 @@ def Inference(FLAGS):
                         classes=FLAGS.num_classes,
                         patch_size=patch_size,
                         save_path=save_path,
+                        has_label=has_label,
                     )
-                    metric_list.append(np.array(metric_i))
-                    metric_list2.append(np.array(metric_i2))
-                    metric_list3.append(np.array(metric_i3))
-                    metric_list4.append(np.array(metric_i4))
+                    if has_label:
+                        metric_list.append(np.array(metric_i))
+                        metric_list2.append(np.array(metric_i2))
+                        metric_list3.append(np.array(metric_i3))
+                        metric_list4.append(np.array(metric_i4))
 
-            performance = np.mean(metric_list)
-            performance2 = np.mean(metric_list2)
-            performance3 = np.mean(metric_list3)
-            performance4 = np.mean(metric_list4)
-            variance = np.std(metric_list)
-            variance2 = np.std(metric_list2)
-            variance3 = np.std(metric_list3)
-            variance4 = np.std(metric_list4)
-            print("iteration %s : mean_dice: %f" % (file1, performance))
-            print("iteration %s : mean_iou: %f" % (file1, performance2))
-            print("----------------------------\n")
+            if has_label and metric_list:
+                performance = np.mean(metric_list)
+                performance2 = np.mean(metric_list2)
+                performance3 = np.mean(metric_list3)
+                performance4 = np.mean(metric_list4)
+                variance = np.std(metric_list)
+                variance2 = np.std(metric_list2)
+                variance3 = np.std(metric_list3)
+                variance4 = np.std(metric_list4)
+                print("iteration %s : mean_dice: %f" % (file1, performance))
+                print("iteration %s : mean_iou: %f" % (file1, performance2))
+                print("----------------------------\n")
 
-            # 写入汇总指标
-            file.write("model_name = " + snapshot_path + "\n")
-            file.write("split = " + split + "\n")
-            file.write("num_samples = %d\n" % len(db_test))
-            file.write("Dice = mean-sd = " + str(performance) + "-" + str(variance) + "\n")
-            file.write("Iou = mean-sd = " + str(performance2) + "-" + str(variance2) + "\n")
-            file.write("MCC = mean-sd = " + str(performance3) + "-" + str(variance3) + "\n")
-            file.write("BM = mean-sd = " + str(performance4) + "-" + str(variance4) + "\n")
+                # 写入汇总指标
+                file.write("model_name = " + snapshot_path + "\n")
+                file.write("split = " + split + "\n")
+                file.write("num_samples = %d\n" % len(db_test))
+                file.write("Dice = mean-sd = " + str(performance) + "-" + str(variance) + "\n")
+                file.write("Iou = mean-sd = " + str(performance2) + "-" + str(variance2) + "\n")
+                file.write("MCC = mean-sd = " + str(performance3) + "-" + str(variance3) + "\n")
+                file.write("BM = mean-sd = " + str(performance4) + "-" + str(variance4) + "\n")
 
-            # 写入逐图指标
-            file.write("\nper-image results:\n")
-            for i in range(len(db_test)):
-                case_name = db_test.sample_list[i]
-                file.write("  %s: dice=%.6f, iou=%.6f, mcc=%.6f, bm=%.6f\n" % (
-                    case_name, metric_list[i][0], metric_list2[i][0],
-                    metric_list3[i][0], metric_list4[i][0]))
-            file.write("\n")
+                # 写入逐图指标
+                file.write("\nper-image results:\n")
+                for i in range(len(db_test)):
+                    case_name = db_test.sample_list[i]
+                    file.write("  %s: dice=%.6f, iou=%.6f, mcc=%.6f, bm=%.6f\n" % (
+                        case_name, metric_list[i][0], metric_list2[i][0],
+                        metric_list3[i][0], metric_list4[i][0]))
+                file.write("\n")
+            else:
+                print("iteration %s : predictions saved (no labels)" % file1)
+                print("----------------------------\n")
+                file.write("model_name = " + snapshot_path + "\n")
+                file.write("split = " + split + "\n")
+                file.write("num_samples = %d\n" % len(db_test))
+                file.write("note = no ground truth labels, predictions only\n\n")
 
     print("results saved to {}".format(save_dir))
 
