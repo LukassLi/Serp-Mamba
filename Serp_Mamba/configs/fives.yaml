@@ -1,0 +1,45 @@
+# FIVES 视网膜血管分割数据集配置
+# 目录结构：{split}/Original/, {split}/Ground truth/
+# Jin et al., 2022, Scientific Data — 800 张 2048×2048 彩色眼底图
+# 600 train / 200 test，像素级二值血管标注
+
+name: "FIVES"
+description: "FIVES: Fundus Image Vessel Segmentation Dataset (Jin et al., 2022)"
+evaluator: "fives"          # 使用 FIVES 评测器（9 项指标：Dice/IoU/MCC/BM/SE/SP/PR/AUC/HD95）
+
+root_dir: "datasets/FIVES"
+
+# 目录布局（注意 "Ground truth" 含空格）
+image_dir: "{split}/Original"
+label_dir: "{split}/Ground truth"
+
+# FIVES 无独立验证集，从训练集按比例划出（val_split_ratio）
+# val 指向 train 目录，通过 val_split_ratio 随机划分，不泄漏 test 数据
+split_map:
+  train: "train"
+  val: "train"
+  test: "test"
+
+# 验证集划分：从训练集（600 张）中划出 20%（120 张）作为验证集
+# 使用固定种子保证可复现，且四类病种（A/D/G/N 各 150 张）近似均衡
+val_split_ratio: 0.2
+val_split_seed: 1337
+
+# 文件匹配
+image_ext: ".png"
+
+# 标签文件名推导：图像和标签文件名完全相同（如 1_A.png → 1_A.png），无需变换
+label_name_transform: []
+
+# 图像属性
+image_mode: "RGB"         # 彩色眼底照片
+input_channels: 1         # 转灰度送入模型
+label_threshold: 0        # 二值掩码，>0 即为血管
+label_rgb_mode: "mean"
+
+# 训练默认超参
+patch_size: [512, 512]
+batch_size: 1             # Pixel_Extractor 按阈值分组后 cat，batch_size>1 会维度不匹配
+max_iterations: 960
+base_lr: 0.0001
+num_classes: 2

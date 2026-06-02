@@ -1,31 +1,19 @@
 import argparse
 import os
-import shutil
-import logging
-import h5py
-import matplotlib.pyplot as plt
 import numpy as np
 np.bool = bool
-import SimpleITK as sitk
 import torch
-from medpy import metric
 from scipy.ndimage import zoom
-from scipy.ndimage.interpolation import zoom
-from tqdm import tqdm
-# from distance_metrics_fast import hd95_fast, asd_fast, nsd
 from PIL import Image
-from networks.net_factory import net_factory
-from dataloaders.dataset import BaseDataSets
 from dataloaders.dataset_registry import load_dataset_config, ConfigDataSets
 from torch.utils.data import DataLoader
 import torch.nn as nn
 from U_Mamba_main.umamba.nnunetv2.nets.SerpMamba import SerpMamba
-import torch
 print(torch.cuda.is_available())
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--root_path", type=str,
-                    default="/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test", help="Name of Experiment")    #最后别加“/”
+                    default="/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test", help="Name of Experiment")    #最后别加"/"
 parser.add_argument("--exp", type=str, default="SerpMamba", help="experiment_name")
 parser.add_argument('--model', type=str,
                     default='unet', help='data_name')
@@ -65,6 +53,8 @@ parser.add_argument('--test_all', action='store_true',
                     help='Test all .pth checkpoints instead of only best model')
 parser.add_argument("--save_dir", type=str, default=None,
                     help="Directory to save per-image predictions and metrics (default: experiments/<dataset>/test_results)")
+parser.add_argument('--evaluate', action='store_true',
+                    help='Run evaluation after inference using the configured evaluator')
 args = parser.parse_args()
 
 # 加载数据集配置
@@ -163,89 +153,36 @@ other_kwargs = {
 }
 
 
-def calculate_bm(pred, gt):
-    # 计算TP, FP, TN, FN
-    TP = ((pred == 1) & (gt == 1)).sum()
-    FP = ((pred == 1) & (gt == 0)).sum()
-    TN = ((pred == 0) & (gt == 0)).sum()
-    FN = ((pred == 0) & (gt == 1)).sum()
-    
-    # 计算真正率（TPR）和真负率（TNR）
-    TPR = TP / (TP + FN) if (TP + FN) > 0 else 0
-    TNR = TN / (TN + FP) if (TN + FP) > 0 else 0
-    
-    # 计算BM
-    BM = TPR + TNR - 1
-    return BM
+def run_inference(image, net, patch_size):
+    """纯推理：图像 → softmax 概率图 + 二值预测。
 
-def calculate_mcc(pred, gt):
-    
-    # 计算TP, FP, TN, FN
-    TP = ((pred == 1) & (gt == 1)).sum()
-    FP = ((pred == 1) & (gt == 0)).sum()
-    TN = ((pred == 0) & (gt == 0)).sum()
-    FN = ((pred == 0) & (gt == 1)).sum()
-    
-    # 计算MCC
-    mcc_denominator = np.sqrt(float(TP+FP) * float(TP+FN) * float(TN+FP) * float(TN+FN))
-    MCC = ((TP * TN) - (FP * FN)) / mcc_denominator if mcc_denominator > 0 else 0
-    return MCC
+    Args:
+        image: torch.Tensor (1, C, H, W)
+        net: 模型
+        patch_size: 网络输入尺寸
 
-def calculate_metric_percase1(pred, gt):
-    if pred.sum() > 0:
-        dice = metric.binary.dc(pred, gt)
-        return dice
-    else:
-        return 0
-    
-def calculate_metric_percase2(pred, gt):
-    if pred.sum() > 0:
-        iou = metric.binary.jc(pred,gt)
-        return iou
-    else:
-        return 0
-
-#2d
-def test_single_volume_fast(case, image, label, net, classes, patch_size=[1024, 1024], save_path=None, has_label=True):
-    # 将输入图像和标签转换为numpy数组
-    image, label = image.squeeze().cpu().detach().numpy(), label.squeeze().cpu().detach().numpy()
-
-    # 初始化预测数组
-    prediction = np.zeros_like(label)
+    Returns:
+        prediction: numpy array (H, W)，二值预测 (0/1)
+        prob_map: numpy array (H, W)，类别 1 的 softmax 概率
+    """
+    image_np = image.squeeze().cpu().detach().numpy()
+    x, y = image_np.shape
 
     # 缩放图像以匹配网络输入尺寸
-    x, y = image.shape
-    zoomed_image = zoom(image, (patch_size[0] / x, patch_size[1] / y), order=0)
+    zoomed_image = zoom(image_np, (patch_size[0] / x, patch_size[1] / y), order=0)
+    input_tensor = torch.from_numpy(zoomed_image).unsqueeze(0).unsqueeze(0).float().cuda()
 
-    # 将处理后的图像转换为适合网络输入的格式
-    input = torch.from_numpy(zoomed_image).unsqueeze(0).unsqueeze(0).float().cuda()
     net.eval()
     with torch.no_grad():
-        softmax_probs = torch.softmax(net(input), dim=1)
-        uncertainty = -1.0 * torch.sum(softmax_probs * torch.log(softmax_probs + 1e-6), dim=1, keepdim=True)
-        # print(softmax_probs.shape)
-        out = torch.argmax(softmax_probs, dim=1)
-        out = out.cpu().detach().numpy().squeeze()
-        pred = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
-        prediction = pred
-        if save_path is not None:
-            # 按原始文件名保存预测掩码（白色=血管，黑色=背景）
-            pred_img = Image.fromarray(prediction.astype(np.uint8) * 255)
-            pred_img.save(save_path)
-    if not has_label:
-        return [], [], [], []
-    metric_list1 = []
-    metric_list2 = []
-    metric_list3 = []
-    metric_list4 = []
-    for i in range(1, classes):
+        softmax_probs = torch.softmax(net(input_tensor), dim=1)
+        out = torch.argmax(softmax_probs, dim=1).cpu().detach().numpy().squeeze()
 
-        metric_list1.append(calculate_metric_percase1(prediction == 1, label == 1))
-        metric_list2.append(calculate_metric_percase2(prediction == 1, label == 1))
-        metric_list3.append(calculate_mcc(prediction == 1, label == 1))
-        metric_list4.append(calculate_bm(prediction == 1, label == 1))
+    # 缩放回原始尺寸
+    prediction = zoom(out, (x / patch_size[0], y / patch_size[1]), order=0)
+    prob_class1 = softmax_probs[0, 1].cpu().detach().numpy()
+    prob_map = zoom(prob_class1, (x / patch_size[0], y / patch_size[1]), order=0)
 
-    return metric_list1,metric_list2,metric_list3,metric_list4
+    return prediction, prob_map
 
 
 def Inference(FLAGS):
@@ -257,10 +194,12 @@ def Inference(FLAGS):
         os.path.dirname(os.path.abspath(__file__)),
         "experiments", dataset_cfg["name"])
 
-    # 输出目录：保存预测掩码和指标
+    # 输出目录：保存预测掩码和概率图
     save_dir = FLAGS.save_dir or os.path.join(folder_path, "test_results")
     pred_dir = os.path.join(save_dir, "predictions")
+    prob_dir = os.path.join(save_dir, "probabilities")
     os.makedirs(pred_dir, exist_ok=True)
+    os.makedirs(prob_dir, exist_ok=True)
 
     files = os.listdir(folder_path)
     pth_files = [file for file in files if file.endswith(".pth")]
@@ -277,95 +216,63 @@ def Inference(FLAGS):
         sorted_files = sorted(pth_files)
 
     patch_size = dataset_cfg.get("patch_size", FLAGS.patch_size)
-    has_label = dataset_cfg.get("has_labels", True)
 
-    with open(os.path.join(save_dir, 'output.txt'), 'w') as file:
-        for file1 in sorted_files:
-            print(os.path.join(folder_path, file1))
+    for file1 in sorted_files:
+        print(os.path.join(folder_path, file1))
 
-            snapshot_path = os.path.join(folder_path, file1)
+        snapshot_path = os.path.join(folder_path, file1)
 
-            net = SerpMamba(input_channels=dataset_cfg.get("input_channels", 1), n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
-                            unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
-                            strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
-                        num_classes=FLAGS.num_classes,**other_kwargs)
+        net = SerpMamba(input_channels=dataset_cfg.get("input_channels", 1), n_stages=len(unet_config["conv_kernel_sizes"]),features_per_stage=[min(unet_config["UNet_base_num_features"] * 2 ** i,
+                        unet_config["unet_max_num_features"]) for i in range(num_stages)],conv_op=conv_op,kernel_sizes=unet_config["conv_kernel_sizes"],
+                        strides=unet_config["pool_op_kernel_sizes"],n_conv_per_stage=unet_config["n_conv_per_stage_encoder"],n_conv_per_stage_decoder=unet_config['n_conv_per_stage_decoder'],
+                    num_classes=FLAGS.num_classes,**other_kwargs)
 
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            net = net.to(device)
-            net.load_state_dict(torch.load(snapshot_path)["state_dict"])
-            print("init weight from {}".format(snapshot_path))
-            net.eval()
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        net = net.to(device)
+        net.load_state_dict(torch.load(snapshot_path)["state_dict"])
+        print("init weight from {}".format(snapshot_path))
+        net.eval()
 
-            metric_list = []
-            metric_list2 = []
-            metric_list3 = []
-            metric_list4 = []
-            with torch.no_grad():
-                for i_batch, sampled_batch in enumerate(testloader):
-                    case_name = sampled_batch["name"][0] if isinstance(sampled_batch["name"], (list, tuple)) else sampled_batch["name"]
-                    # 保存路径：以原始文件名（替换扩展名为 .png）命名
-                    base_name = os.path.splitext(case_name)[0] + ".png"
-                    save_path = os.path.join(pred_dir, base_name)
+        with torch.no_grad():
+            for i_batch, sampled_batch in enumerate(testloader):
+                case_name = sampled_batch["name"][0] if isinstance(sampled_batch["name"], (list, tuple)) else sampled_batch["name"]
+                base_name = os.path.splitext(case_name)[0] + ".png"
 
-                    metric_i,metric_i2,metric_i3,metric_i4 = test_single_volume_fast(
-                        sampled_batch["name"],
-                        sampled_batch["image"],
-                        sampled_batch["label"],
-                        net,
-                        classes=FLAGS.num_classes,
-                        patch_size=patch_size,
-                        save_path=save_path,
-                        has_label=has_label,
-                    )
-                    if has_label:
-                        metric_list.append(np.array(metric_i))
-                        metric_list2.append(np.array(metric_i2))
-                        metric_list3.append(np.array(metric_i3))
-                        metric_list4.append(np.array(metric_i4))
+                # 纯推理
+                prediction, prob_map = run_inference(
+                    sampled_batch["image"], net, patch_size
+                )
 
-            if has_label and metric_list:
-                performance = np.mean(metric_list)
-                performance2 = np.mean(metric_list2)
-                performance3 = np.mean(metric_list3)
-                performance4 = np.mean(metric_list4)
-                variance = np.std(metric_list)
-                variance2 = np.std(metric_list2)
-                variance3 = np.std(metric_list3)
-                variance4 = np.std(metric_list4)
-                print("iteration %s : mean_dice: %f" % (file1, performance))
-                print("iteration %s : mean_iou: %f" % (file1, performance2))
-                print("----------------------------\n")
+                # 保存预测掩码（白色=血管，黑色=背景）
+                pred_path = os.path.join(pred_dir, base_name)
+                pred_img = Image.fromarray(prediction.astype(np.uint8) * 255)
+                pred_img.save(pred_path)
 
-                # 写入汇总指标
-                file.write("model_name = " + snapshot_path + "\n")
-                file.write("split = " + split + "\n")
-                file.write("num_samples = %d\n" % len(db_test))
-                file.write("Dice = mean-sd = " + str(performance) + "-" + str(variance) + "\n")
-                file.write("Iou = mean-sd = " + str(performance2) + "-" + str(variance2) + "\n")
-                file.write("MCC = mean-sd = " + str(performance3) + "-" + str(variance3) + "\n")
-                file.write("BM = mean-sd = " + str(performance4) + "-" + str(variance4) + "\n")
+                # 保存概率图（供后续测评用，AUC 等指标需要）
+                prob_path = os.path.join(prob_dir, os.path.splitext(base_name)[0] + "_prob.npy")
+                np.save(prob_path, prob_map)
 
-                # 写入逐图指标
-                file.write("\nper-image results:\n")
-                for i in range(len(db_test)):
-                    case_name = db_test.sample_list[i]
-                    file.write("  %s: dice=%.6f, iou=%.6f, mcc=%.6f, bm=%.6f\n" % (
-                        case_name, metric_list[i][0], metric_list2[i][0],
-                        metric_list3[i][0], metric_list4[i][0]))
-                file.write("\n")
-            else:
-                print("iteration %s : predictions saved (no labels)" % file1)
-                print("----------------------------\n")
-                file.write("model_name = " + snapshot_path + "\n")
-                file.write("split = " + split + "\n")
-                file.write("num_samples = %d\n" % len(db_test))
-                file.write("note = no ground truth labels, predictions only\n\n")
+        print("iteration %s : predictions saved" % file1)
+        print("----------------------------\n")
 
-    print("results saved to {}".format(save_dir))
+    print("predictions saved to {}".format(save_dir))
+
+    # 推理完成后，若指定 --evaluate 则自动运行测评
+    if FLAGS.evaluate:
+        from evaluate import run_evaluation
+        print("\n========== Running evaluation ==========")
+        run_evaluation(
+            config=dataset_cfg,
+            pred_dir=pred_dir,
+            prob_dir=prob_dir,
+            save_dir=save_dir,
+            checkpoint_names=sorted_files,
+            split=split,
+        )
 
 
 if __name__ == '__main__':
     FLAGS = parser.parse_args()
-    metric = Inference(FLAGS)
+    Inference(FLAGS)
     print("Dataset:", dataset_cfg["name"])
     print("Model:", FLAGS.exp)

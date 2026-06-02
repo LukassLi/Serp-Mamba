@@ -82,6 +82,24 @@ class ConfigDataSets(Dataset):
             ext = config["image_ext"]
             self.sample_list = [f for f in self.sample_list if f.endswith(ext)]
 
+        # 支持 val_split_ratio：从训练目录按比例划出验证集
+        # 当配置了 val_split_ratio 时，train/val 两个 split 都从同一目录读取，
+        # 通过固定种子随机划分，保证可复现且类别近似均衡。
+        val_split_ratio = config.get("val_split_ratio", None)
+        if val_split_ratio is not None and split in ("train", "val"):
+            seed = config.get("val_split_seed", 1337)
+            sorted_files = sorted(self.sample_list)
+            rng = np.random.RandomState(seed)
+            indices = list(range(len(sorted_files)))
+            rng.shuffle(indices)
+            n_val = round(len(indices) * val_split_ratio)
+            val_indices = set(indices[:n_val])
+
+            if split == "val":
+                self.sample_list = sorted([sorted_files[i] for i in val_indices])
+            else:  # train
+                self.sample_list = sorted([sorted_files[i] for i in set(indices) - val_indices])
+
         print(f"[{config['name']}] {split} split: {len(self.sample_list)} samples "
               f"from {self.image_dir}")
 

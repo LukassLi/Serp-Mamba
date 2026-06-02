@@ -1,33 +1,21 @@
 import numpy as np
 import torch
-from medpy import metric
 from scipy.ndimage import zoom
 from PIL import Image
 import torch.nn.functional as F
+from utils.metrics import calc_dice, calc_iou, calculate_metric_percase
 # from distance_metrics_fast import hd95_fast
 
 
 def calculate_metric_percase1(pred, gt):
     pred[pred > 0] = 1
     gt[gt > 0] = 1
-    if pred.sum() > 0:
-        dice = metric.binary.dc(pred, gt)
-        # iou = metric.binary.jc(pred,gt)
-        # hd95 = hd95_fast(pred, gt, (3.0, 0.5, 0.5))
-        return dice
-    else:
-        return 0
-    
+    return calc_dice(pred, gt)
+
 def calculate_metric_percase2(pred, gt):
     pred[pred > 0] = 1
     gt[gt > 0] = 1
-    if pred.sum() > 0:
-        # dice = metric.binary.dc(pred, gt)
-        iou = metric.binary.jc(pred,gt)
-        # hd95 = hd95_fast(pred, gt, (3.0, 0.5, 0.5))
-        return iou
-    else:
-        return 0
+    return calc_iou(pred, gt)
 
 def test_single_volume_fast_SAM(image, label, net, classes, patch_size=[256, 256]):
     # 将输入图像和标签转换为numpy数组
