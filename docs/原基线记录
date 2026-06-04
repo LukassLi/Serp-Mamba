@@ -1,0 +1,23 @@
+/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test
+total 2 samples
+/home/lishh237/Serp-Mamba/Serp_Mamba/val1/unet_best_model.pth
+init weight from /home/lishh237/Serp-Mamba/Serp_Mamba/val1/unet_best_model.pth
+iteration unet_best_model.pth : mean_dice: 0.380079  （这是 60 iter的）
+iteration unet_best_model.pth : mean_iou: 0.234628
+----------------------------
+
+/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test
+Model =  SerpMamba
+(Serp-mamba) lishh237@S49:~/Serp-Mamba/Serp_Mamba$ CUDA_VISIBLE_DEVICES=5 python test.py 
+/home/lishh237/Serp-Mamba/Serp_Mamba/test.py:13: DeprecationWarning: Please import `zoom` from the `scipy.ndimage` namespace; the `scipy.ndimage.interpolation` namespace is deprecated and will be removed in SciPy 2.0.0.
+  from scipy.ndimage.interpolation import zoom
+/home/lishh237/.conda/envs/Serp-mamba/lib/python3.10/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (1.26.13) or chardet (6.0.0.post1)/charset_normalizer (2.1.1) doesn't match a supported version!
+  warnings.warn(
+True
+/home/lishh237/Serp-Mamba/Serp_Mamba/PRIME-FP20_DataPort/PRIME-FP20-TEST/val1_test
+total 2 samples
+/home/lishh237/Serp-Mamba/Serp_Mamba/val1/unet_best_model.pth
+init weight from /home/lishh237/Serp-Mamba/Serp_Mamba/val1/unet_best_model.pth
+iteration unet_best_model.pth : mean_dice: 0.789210 （这是16000 iter的）
+iteration unet_best_model.pth : mean_iou: 0.652014
+----------------------------
