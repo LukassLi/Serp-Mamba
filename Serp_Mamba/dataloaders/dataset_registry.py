@@ -121,7 +121,10 @@ class ConfigDataSets(Dataset):
         transforms = self.config.get("label_name_transform", [])
         label_name = _transform_label_name(image_filename, transforms)
         label_path = os.path.join(self.label_dir, label_name)
-        label = np.array(Image.open(label_path))
+        label_img = Image.open(label_path)
+        if label_img.mode in ("RGBA", "LA", "PA"):
+            label_img = label_img.convert("RGB")
+        label = np.array(label_img)
 
         # RGB 标签转单通道
         if len(label.shape) == 3:
@@ -135,7 +138,7 @@ class ConfigDataSets(Dataset):
 
         # 二值化
         threshold = self.config.get("label_threshold", 0)
-        label[label > threshold] = 1
+        label = (label > threshold).astype(np.uint8)
 
         return label
 

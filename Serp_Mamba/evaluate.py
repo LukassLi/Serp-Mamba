@@ -11,6 +11,7 @@ evaluate.py - 独立测评入口脚本。
 import argparse
 import os
 import numpy as np
+np.bool = bool  # 兼容旧版本 numpy 中的 np.bool 类型
 from PIL import Image
 from dataloaders.dataset_registry import load_dataset_config, ConfigDataSets
 from evaluators import get_evaluator
@@ -60,8 +61,9 @@ def run_evaluation(config, pred_dir, prob_dir, save_dir, checkpoint_names=None, 
     needs_prob = bool(set(evaluator.get_metric_names()) & PROB_BASED_METRICS)
 
     per_image_results = []
+    total = len(db_test)
 
-    for i in range(len(db_test)):
+    for i in range(total):
         sample = db_test[i]
         case_name = sample["name"]
         base_name = os.path.splitext(case_name)[0]
@@ -94,6 +96,8 @@ def run_evaluation(config, pred_dir, prob_dir, save_dir, checkpoint_names=None, 
         # 评估
         metrics = evaluator.evaluate_single(prediction, label, pred_prob=pred_prob)
         per_image_results.append({"name": case_name, **metrics})
+
+        print(f"  [{i + 1}/{total}] {case_name}")
 
     if not per_image_results:
         print("No valid predictions found, skipping evaluation")

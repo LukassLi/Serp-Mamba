@@ -8,6 +8,7 @@ metrics.py - 公共指标工具，统一所有评价指标的计算逻辑。
 
 import numpy as np
 from medpy import metric as medpy_metric
+from skimage.morphology import skeletonize
 
 
 # ── 通用单值指标 ──
@@ -116,6 +117,27 @@ def dice(input, target, ignore_index=None):
     return (2. * intersection + smooth) / (iflat.sum() + tflat.sum() + smooth)
 
 
+# ── 拓扑指标 ──
+
+def calc_cldice(pred, gt):
+    """clDice（中心线 Dice）：衡量预测与标签在骨架层面的拓扑重叠。
+
+    计算方式：先提取骨架，再分别计算骨架被对方掩码覆盖的比例，
+    最后取几何平均。值越高说明血管连通性保持越好。
+    """
+    if pred.sum() == 0 or gt.sum() == 0:
+        return 0.0
+    pred_sk = skeletonize(pred.astype(bool))
+    gt_sk = skeletonize(gt.astype(bool))
+    # 预测骨架有多少落在 GT 掩码内
+    tprec = pred_sk[gt.astype(bool)].sum() / pred_sk.sum() if pred_sk.sum() > 0 else 0.0
+    # GT 骨架有多少落在预测掩码内
+    tsens = gt_sk[pred.astype(bool)].sum() / gt_sk.sum() if gt_sk.sum() > 0 else 0.0
+    if tprec + tsens == 0:
+        return 0.0
+    return 2.0 * tprec * tsens / (tprec + tsens)
+
+
 # ── 批量计算接口 ──
 
 # 注册表：指标名 → 计算函数
@@ -130,6 +152,7 @@ METRIC_REGISTRY = {
     "auc": calc_auc,       # 特殊：需要 pred_prob 而非 pred
     "hd95": calc_hd95,
     "asd": calc_asd,
+    "cldice": calc_cldice,
 }
 
 # 需要 pred_prob 而非 pred 二值图的指标
