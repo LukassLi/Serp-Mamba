@@ -293,7 +293,7 @@ def train(args, snapshot_path):
             writer.add_scalar("loss/model_loss", loss, iter_num)
 
 
-            if iter_num > 0 and iter_num % 10 == 0:
+            if iter_num > 0 and iter_num % len(trainloader) == 0:
                 model.eval()
                 metric_list = 0.0
                 metric_list2 = 0.0

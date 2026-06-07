@@ -85,8 +85,18 @@ class ConfigDataSets(Dataset):
         # 支持 val_split_ratio：从训练目录按比例划出验证集
         # 当配置了 val_split_ratio 时，train/val 两个 split 都从同一目录读取，
         # 通过固定种子随机划分，保证可复现且类别近似均衡。
+        # 当 test 与 train 共享同一目录时（如 CHASE_DB1 所有文件平铺在 raw/ 下），
+        # test 也走 val_split_ratio 划分，避免加载训练数据导致数据泄漏。
         val_split_ratio = config.get("val_split_ratio", None)
-        if val_split_ratio is not None and split in ("train", "val"):
+        train_dir_key = config["split_map"].get("train", "train")
+        test_dir_key = config["split_map"].get("test", "test")
+        test_shares_dir = (train_dir_key == test_dir_key and
+                           config["image_dir"].replace("{split}", train_dir_key) ==
+                           config["image_dir"].replace("{split}", test_dir_key))
+        apply_val_split = val_split_ratio is not None and (
+            split in ("train", "val") or (split == "test" and test_shares_dir)
+        )
+        if apply_val_split:
             seed = config.get("val_split_seed", 1337)
             sorted_files = sorted(self.sample_list)
             rng = np.random.RandomState(seed)
@@ -95,7 +105,7 @@ class ConfigDataSets(Dataset):
             n_val = round(len(indices) * val_split_ratio)
             val_indices = set(indices[:n_val])
 
-            if split == "val":
+            if split in ("val", "test"):
                 self.sample_list = sorted([sorted_files[i] for i in val_indices])
             else:  # train
                 self.sample_list = sorted([sorted_files[i] for i in set(indices) - val_indices])

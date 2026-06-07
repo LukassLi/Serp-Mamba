@@ -1,0 +1,52 @@
+# CHASE_DB1 视网膜血管分割数据集配置
+# 目录结构：raw/ 下所有文件平铺，无 train/test 子目录
+# Fraz et al., 2012, IEEE TBME — 28 张 999×960 彩色眼底图
+# 14 名儿童左右眼各 1 张，双标注者（1stHO / 2ndHO）
+# 无官方 train/test 划分，通过 val_split_ratio 从全量数据划出验证集
+
+name: "CHASE_DB1"
+description: "CHASE_DB1: Child Heart and Health Study (Fraz et al., 2012)"
+
+root_dir: "datasets/CHASE_DB1/raw"
+
+# 所有文件平铺在 raw/ 下，image_dir/label_dir 指向根目录本身
+image_dir: "."
+label_dir: "."
+
+# CHASE_DB1 无子目录，split_map 值为空串
+split_map:
+  train: ""
+  val: ""
+  test: ""
+
+# 文件匹配（仅加载 .jpg 原图，标签通过 transform 推导）
+image_ext: ".jpg"
+
+# 标签文件名推导：Image_01L.jpg → Image_01L_1stHO.png
+# 使用第一标注者（1stHO）作为标准 GT，与文献基准一致
+label_name_transform:
+  - append_suffix: "_1stHO"
+  - change_ext: ".png"
+
+# 图像属性
+image_mode: "RGB"         # 彩色眼底照片
+input_channels: 1         # 转灰度送入模型
+label_threshold: 0        # 二值掩码（PNG mode 1），>0 即为血管
+label_rgb_mode: "mean"
+
+# 验证集划分：28 张中划出 25%（7 张）作为验证集
+# 与 Chen et al. 2026 (MDCT-Unet) 的 21/7 随机划分一致
+# 使用固定种子保证可复现
+val_split_ratio: 0.25
+val_split_seed: 1337
+
+# 训练默认超参
+# Chen 2026 (MDCT-Unet) 使用 batch_size=12, 960×960, 300 epochs
+# 但 SerpMamba 的 Mamba SSM 层显存消耗远大于 MDCT-Unet，
+# 需降低 patch_size 和 batch_size 以适配 V100 32GB
+# 等效训练量：300 epochs × 21 samples/epoch = 6300 iterations
+patch_size: [512, 512]
+batch_size: 1
+max_iterations: 6300
+base_lr: 0.0001
+num_classes: 2
